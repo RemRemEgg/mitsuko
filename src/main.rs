@@ -3,7 +3,7 @@ mod server;
 use std::fs;
 use server::*;
 
-static DEBUG: bool = false;
+static DEBUG: bool = true;
 
 fn main() {
     let contents = fs::read_to_string("input.txt").expect("Should have been able to read the file");
