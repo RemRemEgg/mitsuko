@@ -1,0 +1,15 @@
+#[die=true]
+#[remgine=false]
+// This is a comment
+// This is an example program
+
+fn tick() {
+    balls();
+
+    overthrow_the_capitalists();
+}
+
+fn balls() {
+}
+
+fn overthrow_the_capitalists() {}
