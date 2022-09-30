@@ -1,15 +1,19 @@
-#[die=true]
-#[remgine=false]
-// This is a comment
-// This is an example program
 
-fn tick() {
+//This is a comment
+// And Another
+#[remgine=false]
+#[dead=true]
+
+fn main() {
     balls();
 
-    overthrow_the_capitalists();
+    //Should this be called?
+    overthrow();
 }
 
 fn balls() {
+
 }
 
-fn overthrow_the_capitalists() {}
+// This is a bad function!!!
+fn overthrow () {}
