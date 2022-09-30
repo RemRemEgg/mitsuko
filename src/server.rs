@@ -19,11 +19,11 @@ pub fn trim_white_space(input: Vec<String>) -> (Vec<String>, usize) {
     (out, c)
 }
 
-pub fn warn(warning: &str) {
+pub fn warn(warning: String) {
     println!("[Warning] {}", warning);
 }
 
-pub fn error(error: &str) -> ! {
-    println!("[Error] {}", error);
+pub fn error(error: String) -> ! {
+    eprintln!("[Error] {}", error);
     panic!();
 }
