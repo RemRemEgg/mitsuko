@@ -1,57 +1,69 @@
 #![allow(warnings)]
 
-#[allow(warnings)]
 mod server;
 
+use regex::Regex;
+use server::*;
 use std::cmp::max;
 use std::fmt::format;
 use std::fs;
-use server::*;
 use std::time::Instant;
-use regex::Regex;
 
-static DEBUG: bool = true;
+static VERBOSE: i32 = 1;
 
 fn main() {
-    let contents = fs::read_to_string("input.txt").expect("Should have been able to read the file");
-    /*    let contents = String::from("
-    //This is a comment
-    // And Another
-    #[remgine=false]
-    #[dead=true]
+    let mut contents = "".to_string();
+    if true {
+        contents = fs::read_to_string("input.txt").expect("Should have been able to read the file");
+    } else {
+        contents = String::from(
+            "/This is a comment
+// And Another
+#[remgine=false]
+#[dead=true]
 
-    fn main() {
-        balls();
+fn main() {
+    balls();
 
-        //Should this be called?
-        overthrow();
+    //Should this be called?
+    overthrow();
+}
+
+fn balls() {
+
+}
+
+// This is a bad function!!!
+fn overthrow () {}",
+        );
     }
-
-    fn balls() {
-
-    }
-
-    // This is a bad function!!!
-    fn overthrow () {}");*/
     compile(contents);
 }
 
 fn compile(input: String) {
-    println!("> Compiling");
+    status("Compiling".to_string());
     let mut s = Instant::now();
-    let mut lines = input.split("\n").collect::<Vec<&str>>().iter().map(|s| String::from(String::from(*s).trim())).collect::<Vec<String>>();
+    let mut lines = input
+        .split("\n")
+        .collect::<Vec<&str>>()
+        .iter()
+        .map(|s| String::from(String::from(*s).trim()))
+        .collect::<Vec<String>>();
 
-    let (lines, rem) = trim_white_space(lines);
-    let t = lines.len() + rem;
-    println!("> Trimmed {} lines ({}, {}%) in {} µs", rem, t, rem * 100 / t, s.elapsed().as_micros());
+    let t = lines.len();
 
-    let mut pack = Datapack::new(lines);
+    let mut pack = Datapack::new(lines, String::from("ex"));
 
-    let (pack, status) = scan_pack(pack);
+    let (pack, _stat) = scan_pack(pack);
 
     print_lines(&pack);
 
-    println!("> Finished Compiling {} lines in {} µs, {} functions", t, s.elapsed().as_micros(), pack.functions.len());
+    status(format!(
+        "Finished Compiling {} lines in {} µs, {} functions",
+        t,
+        s.elapsed().as_micros(),
+        pack.functions.len()
+    ));
 }
 
 fn scan_pack(mut pack: Datapack) -> (Datapack, u8) {
@@ -70,19 +82,60 @@ fn scan_pack(mut pack: Datapack) -> (Datapack, u8) {
 }
 
 fn scan_pack_line(line: String, pack: &mut Datapack) -> usize {
-    match line.chars().next().unwrap_or('§') {
-        '#' => {
-            if Regex::new("#\\[.+=.+]").unwrap().is_match(&line) {
-                let s = &line[2..(line.len() - 1)].split("=").collect::<Vec<_>>();
-                set_arg(s[0], s[1], pack);
+    let mut rem: usize = 1;
+    let mut keys: Vec<&str> = line.trim().split(" ").collect::<Vec<_>>();
+    let mut key_1: &str = keys.get(0).unwrap_or(&"§");
+    match key_1 {
+        "fn" => { //[A-Za-z0-9]\S*[A-Za-z0-9]\(([A-Za-z0-9.]+,* *)*\);
+            let key_2 = *keys.get(1).unwrap_or(&"");
+            if MCFunction::is_valid_fn(key_2) {
+                if *keys.get(2).unwrap_or(&"") == "{" {
+                    let mcf = MCFunction::new(key_2);
+                    if pack.vb >= 1 {
+                        println!("Found function \'{}\' at #{}", mcf.path, pack.ln);
+                    }
+                    pack.functions.push(mcf);
+                } else {
+                    error(format!("Expected open bracket \'{} {}\'<-- [HERE] at #{}", key_1, key_2, pack.ln));
+                }
             } else {
-                error(format!("Invalid argument tag \'{}\' at line {}", line, pack.ln))
+                error(format!("Invalid function name: \'{}\' at #{}", key_2, pack.ln));
             }
         }
-        '§' => error(format!("Hit blank string on line #{}", pack.ln)),
-        _ => error(format!("Invalid token \'{}\' at line {}", line.chars().collect::<Vec<char>>()[0], pack.ln))
+        _ => rem = scan_pack_char(line, pack)
     }
-    1
+    rem
+}
+
+fn scan_pack_char(line: String, pack: &mut Datapack) -> usize {
+    let mut rem: usize = 1;
+    let mut char_1: char = *line.trim().chars().collect::<Vec<_>>().get(0).unwrap_or(&'§');
+    match char_1 {
+        '#' => test_arg(line, pack),
+        '/' | '§' | ' ' => {
+            if pack.vb >= 2 {
+                warn(format!("Found non-code line at #{}", pack.ln))
+            }
+        }
+        _ => error(format!(
+            "Unexpected token \'{}\' at #{}",
+            char_1,
+            pack.ln
+        )),
+    }
+    rem
+}
+
+fn test_arg(line: String, pack: &mut Datapack) {
+    if Regex::new("#\\[\\S+\\s*=\\s*\\S+]").unwrap().is_match(&line) {
+        let s = &line[2..(line.len() - 1)].split("=").collect::<Vec<_>>();
+        set_arg(s[0].trim(), s[1].trim(), pack);
+    } else {
+        error(format!(
+            "Invalid argument tag \'{}\' at line {}",
+            line, pack.ln
+        ))
+    }
 }
 
 fn set_arg(arg: &str, val: &str, pack: &mut Datapack) {
@@ -90,29 +143,42 @@ fn set_arg(arg: &str, val: &str, pack: &mut Datapack) {
     match arg {
         "remgine" => pack.remgine = val.to_uppercase().eq("TRUE"),
         "optimizations" => pack.opt_level = max(val.parse::<u8>().unwrap_or(0u8), 4u8),
+        "namespace" => pack.namespace = val.to_string(),
         _ => {
-            warn(format!("Unknown arg: {}", arg));
+            warn(format!("Unknown arg: \'{}\' (value = \'{}\')", arg, val));
             suc = false
         }
     }
-    if suc {
+    if suc && pack.vb >= 1 {
         println!("Set arg \'{}\' to \'{}\'", arg, val);
     }
 }
 
 pub struct Datapack {
     ln: usize,
-    vb: bool,
+    vb: i32,
     remgine: bool,
     opt_level: u8,
+    comments: bool,
     call: bool,
+    namespace: String,
     lines: Vec<String>,
     functions: Vec<MCFunction>,
 }
 
 impl Datapack {
-    fn new(lines: Vec<String>) -> Datapack {
-        Datapack { ln: 0, vb: true, remgine: true, opt_level: 0, call: false, lines, functions: vec![] }
+    fn new(lines: Vec<String>, namespace: String) -> Datapack {
+        Datapack {
+            ln: 1,
+            vb: VERBOSE,
+            remgine: true,
+            opt_level: 0,
+            comments: false,
+            call: false,
+            namespace,
+            lines,
+            functions: vec![],
+        }
     }
 }
 
@@ -123,7 +189,27 @@ pub struct MCFunction {
 }
 
 impl MCFunction {
-    fn new() -> MCFunction {
-        MCFunction { lines: vec![], commands: vec![], path: "".to_string() }
+    fn new(name: &str) -> MCFunction {
+        MCFunction {
+            lines: vec![],
+            commands: vec![],
+            path: name[..name.len()-2].to_string(),
+        }
     }
+
+    fn find_block(&self) {}
+
+    pub fn is_valid_fn(function: &str) -> bool {
+        let find = Regex::new("[A-Za-z0-9]\\S*[A-Za-z0-9]\\(\\);*").unwrap().find(function);
+        return if find.is_none() {
+            false
+        } else {
+            find.unwrap().start() == 0
+        };
+    }
+}
+
+pub struct Statement {
+    line: String,
+    action: String,
 }

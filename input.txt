@@ -1,10 +1,15 @@
-
 //This is a comment
 // And Another
 #[remgine=false]
+#[namespace=ms]
 #[dead=true]
 
 fn main() {
+fn init() {
+fn over_load() {
+fn baller()
+}
+}
     balls();
 
     //Should this be called?

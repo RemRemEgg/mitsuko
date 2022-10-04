@@ -1,4 +1,4 @@
-use crate::Datapack;
+use crate::*;
 
 pub fn print_lines(input: &Datapack) {
     for (i, e) in input.lines.iter().enumerate() {
@@ -25,5 +25,9 @@ pub fn warn(warning: String) {
 
 pub fn error(error: String) -> ! {
     eprintln!("[Error] {}", error);
-    panic!();
+    panic!("{}", error);
+}
+
+pub fn status(status: String) {
+    println!("  > {}", status);
 }
