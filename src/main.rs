@@ -1,6 +1,7 @@
 #![allow(warnings)]
 
 mod server;
+mod tests;
 
 use regex::Regex;
 use server::*;
@@ -13,7 +14,7 @@ static VERBOSE: i32 = 1;
 
 fn main() {
     let mut contents = "".to_string();
-    if true {
+    if false {
         contents = fs::read_to_string("input.txt").expect("Should have been able to read the file");
     } else {
         contents = String::from(
@@ -86,30 +87,30 @@ fn scan_pack_line(line: String, pack: &mut Datapack) -> usize {
     let mut keys: Vec<&str> = line.trim().split(" ").collect::<Vec<_>>();
     let mut key_1: &str = keys.get(0).unwrap_or(&"§");
     match key_1 {
-        "fn" => { //[A-Za-z0-9]\S*[A-Za-z0-9]\(([A-Za-z0-9.]+,* *)*\);
+        "fn" => {
             let key_2 = *keys.get(1).unwrap_or(&"");
             if MCFunction::is_valid_fn(key_2) {
-                if *keys.get(2).unwrap_or(&"") == "{" {
-                    let mcf = MCFunction::new(key_2);
-                    if pack.vb >= 1 {
-                        println!("Found function \'{}\' at #{}", mcf.path, pack.ln);
-                    }
-                    pack.functions.push(mcf);
-                } else {
-                    error(format!("Expected open bracket \'{} {}\'<-- [HERE] at #{}", key_1, key_2, pack.ln));
-                }
+                rem = MCFunction::compile_from(keys, key_1, key_2, pack);
             } else {
-                error(format!("Invalid function name: \'{}\' at #{}", key_2, pack.ln));
+                error(format!(
+                    "Invalid function name: \'{}\' at #{}",
+                    key_2, pack.ln
+                ));
             }
         }
-        _ => rem = scan_pack_char(line, pack)
+        _ => rem = scan_pack_char(line, pack),
     }
     rem
 }
 
 fn scan_pack_char(line: String, pack: &mut Datapack) -> usize {
     let mut rem: usize = 1;
-    let mut char_1: char = *line.trim().chars().collect::<Vec<_>>().get(0).unwrap_or(&'§');
+    let mut char_1: char = *line
+        .trim()
+        .chars()
+        .collect::<Vec<_>>()
+        .get(0)
+        .unwrap_or(&'§');
     match char_1 {
         '#' => test_arg(line, pack),
         '/' | '§' | ' ' => {
@@ -117,17 +118,16 @@ fn scan_pack_char(line: String, pack: &mut Datapack) -> usize {
                 warn(format!("Found non-code line at #{}", pack.ln))
             }
         }
-        _ => error(format!(
-            "Unexpected token \'{}\' at #{}",
-            char_1,
-            pack.ln
-        )),
+        _ => error(format!("Unexpected token \'{}\' at #{}", char_1, pack.ln)),
     }
     rem
 }
 
 fn test_arg(line: String, pack: &mut Datapack) {
-    if Regex::new("#\\[\\S+\\s*=\\s*\\S+]").unwrap().is_match(&line) {
+    if Regex::new("#\\[\\S+\\s*=\\s*\\S+]")
+        .unwrap()
+        .is_match(&line)
+    {
         let s = &line[2..(line.len() - 1)].split("=").collect::<Vec<_>>();
         set_arg(s[0].trim(), s[1].trim(), pack);
     } else {
@@ -193,23 +193,89 @@ impl MCFunction {
         MCFunction {
             lines: vec![],
             commands: vec![],
-            path: name[..name.len()-2].to_string(),
+            path: name[..name.len() - 2].to_string(),
         }
     }
 
-    fn find_block(&self) {}
+    fn find_block(&self, lines: &Vec<String>, ln: usize) -> usize {
+        let b = Blocker::new();
+        let rem = match b.find_size_vec(lines) {
+            Ok(o) => o,
+            Err(e) => error(e)
+        };
+        rem
+    }
 
     pub fn is_valid_fn(function: &str) -> bool {
-        let find = Regex::new("[A-Za-z0-9]\\S*[A-Za-z0-9]\\(\\);*").unwrap().find(function);
+        let find = Regex::new("[A-Za-z0-9]\\S*[A-Za-z0-9]\\(\\);*")
+            .unwrap()
+            .find(function);
         return if find.is_none() {
             false
         } else {
             find.unwrap().start() == 0
         };
     }
+
+    fn compile_from(keys: Vec<&str>, key_1: &str, key_2: &str, pack: &mut Datapack) -> usize {
+        if *keys.get(2).unwrap_or(&"") == "{" {
+            let mcf = MCFunction::new(key_2);
+            if pack.vb >= 1 {
+                println!("Found function \'{}\' at #{}", mcf.path, pack.ln);
+            }
+            let rem = mcf.find_block(&pack.lines, pack.ln);
+            pack.functions.push(mcf);
+            rem
+        } else {
+            error(format!(
+                "Expected open bracket \'{} {}\'<-- [HERE] at #{}",
+                key_1, key_2, pack.ln
+            ));
+        }
+    }
 }
 
 pub struct Statement {
     line: String,
     action: String,
+}
+
+struct Blocker {
+    stack: Vec<char>,
+    string: bool,
+}
+
+impl Blocker {
+    fn new() -> Blocker {
+        Blocker {
+            stack: Vec::new(),
+            string: false,
+        }
+    }
+
+    pub fn find_size_vec(&self, lines: &Vec<String>) -> Result<usize, String> {
+        Ok(1)
+    }
+
+    pub fn find_size(&mut self, line: &String) -> Result<usize, String> {
+        let mut cs = line.chars();
+        let mut pos: usize = 0;
+        while let Some(c) = cs.next() {
+            pos += 1;
+            match c {
+                '\\' => { cs.nth(1); }
+                '{' if !self.string => self.stack.push(c),
+                '}' if !self.string => { if self.stack.last().eq(&Some(&'{')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' at {}", c, pos)); } },
+                '(' if !self.string => self.stack.push(c),
+                ')' if !self.string => { if self.stack.last().eq(&Some(&'(')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' at {}", c, pos)); } },
+                '[' if !self.string => self.stack.push(c),
+                ']' if !self.string => { if self.stack.last().eq(&Some(&'[')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' at {}", c, pos)); } },
+                _ => {}
+            }
+            if self.stack.len() == 0 {
+                return Ok(pos);
+            }
+        }
+        Ok(usize::MAX)
+    }
 }
