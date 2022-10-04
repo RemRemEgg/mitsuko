@@ -7,8 +7,8 @@ mod tests {
         let s = "{ this is one {{}} fn} opp!sebf kjshb fkuehbs fkshebf lshebf les".to_string();
 
         let mut b = Blocker::new();
-        let o = b.find_size(&s);
-        let o2 = b.find_size(&s);
+        let o = b.find_size(&s, 0);
+        let o2 = b.find_size(&s, 0);
         println!("\'{}\'", &s[..o2.unwrap()]);
         assert_eq!(o, Ok(22));
     }
@@ -18,17 +18,34 @@ mod tests {
         let s = "{ code block array[indicie(function())].method(); let lambda = {}}".to_string();
 
         let mut b = Blocker::new();
-        let o = b.find_size(&s);
+        let o = b.find_size(&s, 0);
         assert_eq!(o, Ok(s.len()));
     }
 
     #[test]
-    #[should_panic]
     fn find_block_3() {
         let s = "{array[function(])}".to_string();
 
         let mut b = Blocker::new();
-        let o = b.find_size(&s);
-        assert_eq!(o, Ok(2));
+        let o = b.find_size(&s, 0);
+        assert!(o.is_err());
+    }
+
+    #[test]
+    fn find_block_4() {
+        let s = "{ let cp \\]= \")\"}".to_string();
+
+        let mut b = Blocker::new();
+        let o = b.find_size(&s, 0);
+        assert_eq!(o, Ok(15));
+    }
+
+    #[test]
+    fn find_block_5() {
+        let s = "(nothing to see here!".to_string();
+
+        let mut b = Blocker::new();
+        let o = b.find_size(&s, 0);
+        assert!(o.unwrap() >= Blocker::NOT_FOUND);
     }
 }
