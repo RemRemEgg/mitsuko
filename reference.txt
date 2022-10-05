@@ -1,0 +1,32 @@
+# Tags:
+remgine (bool)
+optimizations (0..4)
+namespace (String)
+name (String)
+debug (0..3)
+
+# Blocks:
+if [!]<statement> : **
+ifs [!]<statement> {
+    **
+}
+
+# Code:
+<function>();
+cmd <command> [args...]
+$var = < num | math | $var | @nbt >
+score $<var> < + | - | / | * | < | > | <> | % > < num | $var >
+exe < as | at | ast > @<selector> < ... | run > **
+
+# Statements:
+$<var> < = | < | > | <= | >= | matches > < $var | range >
+predicate <predicate>
+
+## Requires remgine
+
+# Code:
+rmm @<selector> < num | $var >
+csel player from id < num | $var >
+
+# Statements:
+random <num>
