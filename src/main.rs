@@ -1,4 +1,5 @@
 use std::cmp::min;
+use std::fmt::{Display, Formatter};
 use regex::Regex;
 use server::*;
 use std::fs;
@@ -57,21 +58,33 @@ fn compile(input: String) {
 
     let t = lines.len();
 
-    let pack = Datapack::new(lines, String::from("ex"));
+    let mut pack = Datapack::new(lines, String::from("ex"));
 
-    let (pack, _stat) = scan_pack(pack);
-
-    print_lines(&pack);
+    pack = scan_pack(pack);
 
     status(format!(
-        "Finished Compiling {} lines in {} µs, {} functions",
+        "Interpreted Datapack with {} functions in {} µs",
+        pack.functions.len(),
+        s.elapsed().as_micros()
+    ));
+
+    pack = compile_pack(pack);
+
+    status(format!(
+        "Finished Compiling {} with {} lines in {} µs",
+        pack,
         t,
-        s.elapsed().as_micros(),
-        pack.functions.len()
+        s.elapsed().as_micros()
     ));
 }
 
-fn scan_pack(mut pack: Datapack) -> (Datapack, u8) {
+
+fn compile_pack(mut pack: Datapack) -> Datapack {
+    for
+    pack
+}
+
+fn scan_pack(mut pack: Datapack) -> Datapack {
     'lines: loop {
         if pack.lines.len() <= 0 {
             status("Found EOF".to_string());
@@ -83,7 +96,19 @@ fn scan_pack(mut pack: Datapack) -> (Datapack, u8) {
             pack.lines.remove(0);
         }
     }
-    (pack, 0)
+    if !pack.functions.iter().any(|fun| -> bool { fun.path.eq("main") }) {
+        warn("No 'main' function found, is this intentional?".to_string(), &mut pack);
+    }
+    if !pack.functions.iter().any(|fun| -> bool { fun.path.eq("init") }) {
+        warn("No 'init' function found, is this intentional?".to_string(), &mut pack);
+    }
+    status("Generated Function Data\n".to_string());
+    status(format!("{} Generated {} Warnings: ", pack, pack.warnings.len()));
+    let mut t = Datapack::new(vec![], "".to_string());
+    for (i, e) in pack.warnings.iter().enumerate() {
+        warn(format!("|  {}{}", e, if i == pack.warnings.len() - 1 { "\n" } else { "" }), &mut t);
+    }
+    pack
 }
 
 fn scan_pack_line(line: String, pack: &mut Datapack) -> usize {
@@ -97,7 +122,7 @@ fn scan_pack_line(line: String, pack: &mut Datapack) -> usize {
                 rem = MCFunction::compile_from(keys, key_1, key_2, pack);
             } else {
                 error(format!(
-                    "Invalid function name: \'{}\' at #{}",
+                    "Invalid function name: \'{}\' @{}",
                     key_2, pack.ln
                 ));
             }
@@ -119,16 +144,16 @@ fn scan_pack_char(line: String, pack: &mut Datapack) -> usize {
         '#' => test_arg(line, pack),
         '/' | '§' | ' ' => {
             if pack.vb >= 3 {
-                debug(format!("Found non-code line at #{}", pack.ln))
+                debug(format!("Found non-code line @{}", pack.ln))
             }
         }
-        _ => error(format!("Unexpected token \'{}\' at #{}", char_1, pack.ln)),
+        _ => error(format!("Unexpected token \'{}\' @{}", char_1, pack.ln)),
     }
     rem
 }
 
 fn test_arg(line: String, pack: &mut Datapack) {
-    if Regex::new("#\\[\\S+\\s*=\\s*\\S+]")
+    if Regex::new("#\\[\\S+\\s*=\\s*[\\S _]+]")
         .unwrap()
         .is_match(&line)
     {
@@ -142,15 +167,16 @@ fn test_arg(line: String, pack: &mut Datapack) {
     }
 }
 
-fn set_arg(arg: &str, val: &str, pack: &mut Datapack) {
+fn set_arg(arg: &str, val: &str, mut pack: &mut Datapack) {
     let mut suc = true;
     match arg {
         "remgine" => pack.remgine = val.to_uppercase().eq("TRUE"),
         "optimizations" => pack.opt_level = min(val.parse::<u8>().unwrap_or(0u8), 4u8),
-        "namespace" => pack._namespace = val.to_string(),
+        "namespace" => pack.namespace = val.to_string(),
+        "name" => pack.name = val.to_string(),
         "debug" => pack.vb = min(val.parse::<i32>().unwrap_or(0), 3),
         _ => {
-            if pack.vb >= 1 { warn(format!("Unknown arg: \'{}\' (value = \'{}\')", arg, val)); }
+            if pack.vb >= 1 { warn(format!("Unknown arg: \'{}\' (value = \'{}\') @{}", arg, val, pack.ln), &mut pack); }
             suc = false
         }
     }
@@ -166,9 +192,11 @@ pub struct Datapack {
     opt_level: u8,
     _comments: bool,
     _call: bool,
-    _namespace: String,
+    namespace: String,
+    name: String,
     lines: Vec<String>,
     functions: Vec<MCFunction>,
+    warnings: Vec<String>,
 }
 
 impl Datapack {
@@ -180,10 +208,18 @@ impl Datapack {
             opt_level: 0,
             _comments: false,
             _call: false,
-            _namespace: namespace,
+            namespace,
+            name: "Untitled".to_string(),
             lines,
             functions: vec![],
+            warnings: vec![],
         }
+    }
+}
+
+impl Display for Datapack {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("Datapack['{}' @ '{}' ({}l {}f)]", self.name, self.namespace, self.lines.len(), self.functions.len()))
     }
 }
 
@@ -202,7 +238,7 @@ impl MCFunction {
         }
     }
 
-    fn extract_block(&mut self, lines: &Vec<String>, ln: usize) -> usize {
+    fn extract_block(&mut self, lines: &Vec<String>, _ln: usize) -> usize {
         let mut b = Blocker::new();
         let rem = match b.find_size_vec(lines, lines[0].find('{').unwrap_or(0)) {
             Ok(o) => {
@@ -211,7 +247,7 @@ impl MCFunction {
                         self.lines.push(lines[i].to_string());
                     }
                     o.0 + 1
-                } else { error(format!("Unterminated function: \'{}\' at #{}", self.path, ln)) }
+                } else { error(format!("Unterminated function: \'{}\' within {}", self.path, self.path)) }
             }
             Err(e) => error(e)
         };
@@ -232,12 +268,12 @@ impl MCFunction {
     fn compile_from(keys: Vec<&str>, key_1: &str, key_2: &str, pack: &mut Datapack) -> usize {
         if keys.get(2).unwrap_or(&"").starts_with("{") {
             let mut mcf = MCFunction::new(key_2);
-            if pack.functions.iter().any(|fun| -> bool {fun.path.eq(&mcf.path)}) {
-                error(format!("Duplicate function name \'{}\' at #{}", mcf.path, pack.ln));
+            if pack.functions.iter().any(|fun| -> bool { fun.path.eq(&mcf.path) }) {
+                error(format!("Duplicate function name \'{}\' @{}", mcf.path, pack.ln));
             }
             let rem = mcf.extract_block(&pack.lines, pack.ln);
             if pack.vb >= 1 {
-                debug(format!("Found function \'{}\' at #{}", mcf.path, pack.ln));
+                debug(format!("Found function \'{}\' @{}", mcf.path, pack.ln));
                 if pack.vb >= 2 {
                     debug(format!(" -> {} Lines REM", rem));
                 }
@@ -246,7 +282,7 @@ impl MCFunction {
             rem
         } else {
             error(format!(
-                "Expected open bracket \'{} {}\'<-- [HERE] at #{}",
+                "Expected '{{' after \'{} {}\' @{}",
                 key_1, key_2, pack.ln
             ))
         }
@@ -274,7 +310,10 @@ impl Blocker {
             if c >= lines.len() {
                 return Ok((Blocker::NOT_FOUND, 0));
             }
-            let r = self.find_size(&lines[c], if c == 0 { offset } else { 0 })?;
+            let r = self.find_size(&lines[c], if c == 0 { offset } else { 0 }).map_err(|mut e| {
+                e.push_str(&*(c + offset - 1).to_string());
+                e
+            })?;
             if r != Blocker::NOT_FOUND {
                 return Ok((c, r));
             }
@@ -296,11 +335,11 @@ impl Blocker {
                     pos += 1;
                 }
                 '{' if !self.string => self.stack.push(c),
-                '}' if !self.string => { if self.stack.last().eq(&Some(&'{')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' at {}", c, pos)); } }
+                '}' if !self.string => { if self.stack.last().eq(&Some(&'{')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' @({})", c, pos)); } }
                 '(' if !self.string => self.stack.push(c),
-                ')' if !self.string => { if self.stack.last().eq(&Some(&'(')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' at {}", c, pos)); } }
+                ')' if !self.string => { if self.stack.last().eq(&Some(&'(')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' @({})", c, pos)); } }
                 '[' if !self.string => self.stack.push(c),
-                ']' if !self.string => { if self.stack.last().eq(&Some(&'[')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' at {}", c, pos)); } }
+                ']' if !self.string => { if self.stack.last().eq(&Some(&'[')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' @({})", c, pos)); } }
                 '\'' => {
                     if self.string {
                         self.string = !self.stack.last().eq(&Some(&'\''));
@@ -321,7 +360,7 @@ impl Blocker {
                 }
                 _ => {}
             }
-            if self.stack.len() == 0 {
+            if self.stack.len() == 0 && !self.string {
                 return Ok(pos);
             }
         }

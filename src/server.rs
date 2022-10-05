@@ -1,6 +1,6 @@
 use crate::*;
 
-pub fn print_lines(input: &Datapack) {
+pub fn _print_lines(input: &Datapack) {
     for (i, e) in input.lines.iter().enumerate() {
         println!("[{}] {}", i, e);
     }
@@ -19,8 +19,9 @@ pub fn _trim_white_space(input: Vec<String>) -> (Vec<String>, usize) {
     (out, c)
 }
 
-pub fn warn(message: String) {
-    println!("‼»   [Warning] {}", message);
+pub fn warn(message: String, pack: &mut Datapack) {
+    println!("‼»   [Warning {}] {}", pack.warnings.len(), message);
+    pack.warnings.push(message);
 }
 
 pub fn error(message: String) -> ! {

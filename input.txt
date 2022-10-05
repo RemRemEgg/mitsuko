@@ -1,15 +1,16 @@
-#[debug=1]
-#[remgine=false]
+#[debug=0]
+#[name=Generation Test]
 #[namespace=ms]
+#[remgine=false]
 #[dead=true]
 //This is a comment
 // And Another
 
-fn main() {
-}
+fn main() {}
+
 fn init() {
     balls();
-
+    hubjub();
     //Should this be called?
     overthrow();
 }
@@ -24,4 +25,4 @@ fn fun/overthrow() {}
 fn get/spong() {
 }
 fn get/poggers() {}
-fn get/LOG() {}
+fn get/log() {}
