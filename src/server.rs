@@ -6,6 +6,17 @@ pub fn _print_lines(input: &Datapack) {
     }
 }
 
+pub fn print_warnings(pack: &Datapack) {
+    if pack.warnings.len() > 0 {
+        status(format!("'{}' Generated {} Warnings: ", pack.name, pack.warnings.len()));
+        let mut t = Datapack::new(vec![], "".to_string());
+        for (i, e) in pack.warnings.iter().enumerate() {
+            print_warning(format!("|  {}{}", e, if i == pack.warnings.len() - 1 { "\n" } else { "" }), &mut t);
+        }
+        println!();
+    }
+}
+
 pub fn _trim_white_space(input: Vec<String>) -> (Vec<String>, usize) {
     let mut out = Vec::new();
     let mut c: usize = 0usize;
@@ -20,6 +31,11 @@ pub fn _trim_white_space(input: Vec<String>) -> (Vec<String>, usize) {
 }
 
 pub fn warn(message: String, pack: &mut Datapack) {
+    println!("‼»   [Warning] {}", message);
+    pack.warnings.push(message);
+}
+
+pub fn print_warning(message: String, pack: &mut Datapack) {
     println!("‼»   [Warning {}] {}", pack.warnings.len(), message);
     pack.warnings.push(message);
 }

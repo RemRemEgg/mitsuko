@@ -48,7 +48,7 @@ fn overthrow () {}
 
 fn compile(input: String) {
     status("Compiling".to_string());
-    let s = Instant::now();
+    let t_total = Instant::now();
     let lines = input
         .split("\n")
         .collect::<Vec<&str>>()
@@ -60,28 +60,39 @@ fn compile(input: String) {
 
     let mut pack = Datapack::new(lines, String::from("ex"));
 
+    let t_scan = Instant::now();
     pack = scan_pack(pack);
-
     status(format!(
-        "Interpreted Datapack with {} functions in {} µs",
+        "Scanned {} functions in {} µs\n",
         pack.functions.len(),
-        s.elapsed().as_micros()
+        t_scan.elapsed().as_micros()
     ));
 
+    let t_compile = Instant::now();
     pack = compile_pack(pack);
+    status(format!(
+        "Compiled {} lines in {} µs\n",
+        t,
+        t_compile.elapsed().as_micros()
+    ));
+
+
+    let t_clean = Instant::now();
+    pack = clean_pack(pack);
+    status(format!(
+        "Cleaned up in {} µs\n",
+        t_clean.elapsed().as_micros()
+    ));
 
     status(format!(
-        "Finished Compiling {} with {} lines in {} µs",
+        "Finished {} [opt {} + {}remgine] in {} µs\n",
         pack,
-        t,
-        s.elapsed().as_micros()
+        pack.opt_level,
+        if pack.remgine { "" } else { "no " },
+        t_total.elapsed().as_micros()
     ));
-}
 
-
-fn compile_pack(mut pack: Datapack) -> Datapack {
-    for
-    pack
+    print_warnings(&pack);
 }
 
 fn scan_pack(mut pack: Datapack) -> Datapack {
@@ -103,11 +114,6 @@ fn scan_pack(mut pack: Datapack) -> Datapack {
         warn("No 'init' function found, is this intentional?".to_string(), &mut pack);
     }
     status("Generated Function Data\n".to_string());
-    status(format!("{} Generated {} Warnings: ", pack, pack.warnings.len()));
-    let mut t = Datapack::new(vec![], "".to_string());
-    for (i, e) in pack.warnings.iter().enumerate() {
-        warn(format!("|  {}{}", e, if i == pack.warnings.len() - 1 { "\n" } else { "" }), &mut t);
-    }
     pack
 }
 
@@ -185,6 +191,24 @@ fn set_arg(arg: &str, val: &str, mut pack: &mut Datapack) {
     }
 }
 
+
+fn compile_pack(mut pack: Datapack) -> Datapack {
+    pack
+}
+
+
+fn clean_pack(mut pack: Datapack) -> Datapack {
+    for fi in 0..pack.functions.len() {
+        for ci in 0..pack.functions[fi].calls.len() {
+            let c = &pack.functions[fi].calls[ci];
+            if !pack.functions.iter().any(|f| -> bool { f.path.eq(&c.0) }) {
+                warn(format!("No such function '{}' found @{}", c.0, c.1), &mut pack);
+            }
+        }
+    }
+    pack
+}
+
 pub struct Datapack {
     ln: usize,
     vb: i32,
@@ -227,6 +251,7 @@ pub struct MCFunction {
     lines: Vec<String>,
     _commands: Vec<String>,
     path: String,
+    calls: Vec<(String, usize)>,
 }
 
 impl MCFunction {
@@ -235,6 +260,7 @@ impl MCFunction {
             lines: vec![],
             _commands: vec![],
             path: name[..name.len() - 2].to_string(),
+            calls: vec![],
         }
     }
 
