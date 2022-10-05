@@ -1,24 +1,27 @@
-//This is a comment
-// And Another
+#[debug=1]
 #[remgine=false]
 #[namespace=ms]
 #[dead=true]
+//This is a comment
+// And Another
 
 fn main() {
+}
 fn init() {
-fn over_load() {
-fn baller()
-}
-}
     balls();
 
     //Should this be called?
     overthrow();
 }
 
-fn balls() {
+fn fun/balls() {
 
 }
 
 // This is a bad function!!!
-fn overthrow () {}
+fn fun/overthrow() {}
+
+fn get/spong() {
+}
+fn get/poggers() {}
+fn get/LOG() {}

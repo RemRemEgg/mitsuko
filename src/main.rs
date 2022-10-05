@@ -1,4 +1,4 @@
-use std::cmp::max;
+use std::cmp::min;
 use regex::Regex;
 use server::*;
 use std::fs;
@@ -7,20 +7,26 @@ use std::time::Instant;
 mod server;
 mod tests;
 
-static VERBOSE: i32 = 1;
+static VERBOSE: i32 = 0;
 
 fn main() {
     let contents;
-    if false {
+    if true {
         contents = fs::read_to_string("input.txt").expect("Should have been able to read the file");
     } else {
         contents = String::from(
-            "/This is a comment
+            "///This is a comment
 // And Another
 #[remgine=false]
+#[namespace=ms]
 #[dead=true]
 
 fn main() {
+fn init() {
+fn over_load() {
+fn baller()
+}
+}
     balls();
 
     //Should this be called?
@@ -32,7 +38,8 @@ fn balls() {
 }
 
 // This is a bad function!!!
-fn overthrow () {}",
+fn overthrow () {}
+",
         );
     }
     compile(contents);
@@ -67,7 +74,7 @@ fn compile(input: String) {
 fn scan_pack(mut pack: Datapack) -> (Datapack, u8) {
     'lines: loop {
         if pack.lines.len() <= 0 {
-            println!("Found EOF");
+            status("Found EOF".to_string());
             break 'lines;
         }
         let remove = scan_pack_line(pack.lines[0].to_string(), &mut pack);
@@ -111,8 +118,8 @@ fn scan_pack_char(line: String, pack: &mut Datapack) -> usize {
     match char_1 {
         '#' => test_arg(line, pack),
         '/' | '§' | ' ' => {
-            if pack.vb >= 2 {
-                warn(format!("Found non-code line at #{}", pack.ln))
+            if pack.vb >= 3 {
+                debug(format!("Found non-code line at #{}", pack.ln))
             }
         }
         _ => error(format!("Unexpected token \'{}\' at #{}", char_1, pack.ln)),
@@ -139,15 +146,16 @@ fn set_arg(arg: &str, val: &str, pack: &mut Datapack) {
     let mut suc = true;
     match arg {
         "remgine" => pack.remgine = val.to_uppercase().eq("TRUE"),
-        "optimizations" => pack.opt_level = max(val.parse::<u8>().unwrap_or(0u8), 4u8),
+        "optimizations" => pack.opt_level = min(val.parse::<u8>().unwrap_or(0u8), 4u8),
         "namespace" => pack._namespace = val.to_string(),
+        "debug" => pack.vb = min(val.parse::<i32>().unwrap_or(0), 3),
         _ => {
-            warn(format!("Unknown arg: \'{}\' (value = \'{}\')", arg, val));
+            if pack.vb >= 1 { warn(format!("Unknown arg: \'{}\' (value = \'{}\')", arg, val)); }
             suc = false
         }
     }
     if suc && pack.vb >= 1 {
-        println!("Set arg \'{}\' to \'{}\'", arg, val);
+        debug(format!("Set arg \'{}\' to \'{}\'", arg, val));
     }
 }
 
@@ -180,7 +188,7 @@ impl Datapack {
 }
 
 pub struct MCFunction {
-    _lines: Vec<String>,
+    lines: Vec<String>,
     _commands: Vec<String>,
     path: String,
 }
@@ -188,26 +196,30 @@ pub struct MCFunction {
 impl MCFunction {
     fn new(name: &str) -> MCFunction {
         MCFunction {
-            _lines: vec![],
+            lines: vec![],
             _commands: vec![],
             path: name[..name.len() - 2].to_string(),
         }
     }
 
-    fn extract_block(&self, lines: &Vec<String>, ln: usize) -> usize {
+    fn extract_block(&mut self, lines: &Vec<String>, ln: usize) -> usize {
         let mut b = Blocker::new();
-        let rem = match b.find_size_vec(lines, 0) {
-            Ok(o) => { if o.0 != Blocker::NOT_FOUND {
-                for i in 0..o.0 {}
-                o.0
-            } else { error(format!("Unterminated function: \'{}\' at #{}", self.path, ln)) } }
+        let rem = match b.find_size_vec(lines, lines[0].find('{').unwrap_or(0)) {
+            Ok(o) => {
+                if o.0 != Blocker::NOT_FOUND {
+                    for i in 1..o.0 {
+                        self.lines.push(lines[i].to_string());
+                    }
+                    o.0 + 1
+                } else { error(format!("Unterminated function: \'{}\' at #{}", self.path, ln)) }
+            }
             Err(e) => error(e)
         };
         rem
     }
 
     pub fn is_valid_fn(function: &str) -> bool {
-        let find = Regex::new("[A-Za-z0-9]\\S*[A-Za-z0-9]\\(\\);*")
+        let find = Regex::new("[a-z0-9][a-z0-9/_]*[a-z0-9]\\(\\);*")
             .unwrap()
             .find(function);
         return if find.is_none() {
@@ -218,12 +230,18 @@ impl MCFunction {
     }
 
     fn compile_from(keys: Vec<&str>, key_1: &str, key_2: &str, pack: &mut Datapack) -> usize {
-        if *keys.get(2).unwrap_or(&"") == "{" {
-            let mcf = MCFunction::new(key_2);
-            if pack.vb >= 1 {
-                println!("Found function \'{}\' at #{}", mcf.path, pack.ln);
+        if keys.get(2).unwrap_or(&"").starts_with("{") {
+            let mut mcf = MCFunction::new(key_2);
+            if pack.functions.iter().any(|fun| -> bool {fun.path.eq(&mcf.path)}) {
+                error(format!("Duplicate function name \'{}\' at #{}", mcf.path, pack.ln));
             }
             let rem = mcf.extract_block(&pack.lines, pack.ln);
+            if pack.vb >= 1 {
+                debug(format!("Found function \'{}\' at #{}", mcf.path, pack.ln));
+                if pack.vb >= 2 {
+                    debug(format!(" -> {} Lines REM", rem));
+                }
+            }
             pack.functions.push(mcf);
             rem
         } else {

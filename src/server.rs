@@ -19,15 +19,19 @@ pub fn _trim_white_space(input: Vec<String>) -> (Vec<String>, usize) {
     (out, c)
 }
 
-pub fn warn(warning: String) {
-    println!("[Warning] {}", warning);
+pub fn warn(message: String) {
+    println!("‼»   [Warning] {}", message);
 }
 
-pub fn error(error: String) -> ! {
-    eprintln!("[Error] {}", error);
-    panic!("{}", error);
+pub fn error(message: String) -> ! {
+    eprintln!("💀   [Error] {}", message);
+    panic!("{}", message);
 }
 
-pub fn status(status: String) {
-    println!("  > {}", status);
+pub fn status(message: String) {
+    println!(" »   {}", message);
+}
+
+pub fn debug(message: String) {
+    println!("§»   {}", message);
 }
