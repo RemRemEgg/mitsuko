@@ -1,19 +1,16 @@
-#![allow(warnings)]
+use std::cmp::max;
+use regex::Regex;
+use server::*;
+use std::fs;
+use std::time::Instant;
 
 mod server;
 mod tests;
 
-use regex::Regex;
-use server::*;
-use std::cmp::max;
-use std::fmt::format;
-use std::fs;
-use std::time::Instant;
-
 static VERBOSE: i32 = 1;
 
 fn main() {
-    let mut contents = "".to_string();
+    let contents;
     if false {
         contents = fs::read_to_string("input.txt").expect("Should have been able to read the file");
     } else {
@@ -43,8 +40,8 @@ fn overthrow () {}",
 
 fn compile(input: String) {
     status("Compiling".to_string());
-    let mut s = Instant::now();
-    let mut lines = input
+    let s = Instant::now();
+    let lines = input
         .split("\n")
         .collect::<Vec<&str>>()
         .iter()
@@ -53,7 +50,7 @@ fn compile(input: String) {
 
     let t = lines.len();
 
-    let mut pack = Datapack::new(lines, String::from("ex"));
+    let pack = Datapack::new(lines, String::from("ex"));
 
     let (pack, _stat) = scan_pack(pack);
 
@@ -83,9 +80,9 @@ fn scan_pack(mut pack: Datapack) -> (Datapack, u8) {
 }
 
 fn scan_pack_line(line: String, pack: &mut Datapack) -> usize {
-    let mut rem: usize = 1;
-    let mut keys: Vec<&str> = line.trim().split(" ").collect::<Vec<_>>();
-    let mut key_1: &str = keys.get(0).unwrap_or(&"§");
+    let rem: usize;
+    let keys: Vec<&str> = line.trim().split(" ").collect::<Vec<_>>();
+    let key_1: &str = keys.get(0).unwrap_or(&"§");
     match key_1 {
         "fn" => {
             let key_2 = *keys.get(1).unwrap_or(&"");
@@ -104,8 +101,8 @@ fn scan_pack_line(line: String, pack: &mut Datapack) -> usize {
 }
 
 fn scan_pack_char(line: String, pack: &mut Datapack) -> usize {
-    let mut rem: usize = 1;
-    let mut char_1: char = *line
+    let rem: usize = 1;
+    let char_1: char = *line
         .trim()
         .chars()
         .collect::<Vec<_>>()
@@ -143,7 +140,7 @@ fn set_arg(arg: &str, val: &str, pack: &mut Datapack) {
     match arg {
         "remgine" => pack.remgine = val.to_uppercase().eq("TRUE"),
         "optimizations" => pack.opt_level = max(val.parse::<u8>().unwrap_or(0u8), 4u8),
-        "namespace" => pack.namespace = val.to_string(),
+        "namespace" => pack._namespace = val.to_string(),
         _ => {
             warn(format!("Unknown arg: \'{}\' (value = \'{}\')", arg, val));
             suc = false
@@ -159,9 +156,9 @@ pub struct Datapack {
     vb: i32,
     remgine: bool,
     opt_level: u8,
-    comments: bool,
-    call: bool,
-    namespace: String,
+    _comments: bool,
+    _call: bool,
+    _namespace: String,
     lines: Vec<String>,
     functions: Vec<MCFunction>,
 }
@@ -173,9 +170,9 @@ impl Datapack {
             vb: VERBOSE,
             remgine: true,
             opt_level: 0,
-            comments: false,
-            call: false,
-            namespace,
+            _comments: false,
+            _call: false,
+            _namespace: namespace,
             lines,
             functions: vec![],
         }
@@ -183,24 +180,27 @@ impl Datapack {
 }
 
 pub struct MCFunction {
-    lines: Vec<String>,
-    commands: Vec<String>,
+    _lines: Vec<String>,
+    _commands: Vec<String>,
     path: String,
 }
 
 impl MCFunction {
     fn new(name: &str) -> MCFunction {
         MCFunction {
-            lines: vec![],
-            commands: vec![],
+            _lines: vec![],
+            _commands: vec![],
             path: name[..name.len() - 2].to_string(),
         }
     }
 
-    fn find_block(&self, lines: &Vec<String>, ln: usize) -> usize {
-        let b = Blocker::new();
-        let rem = match b.find_size_vec(lines) {
-            Ok(o) => o,
+    fn extract_block(&self, lines: &Vec<String>, ln: usize) -> usize {
+        let mut b = Blocker::new();
+        let rem = match b.find_size_vec(lines, 0) {
+            Ok(o) => { if o.0 != Blocker::NOT_FOUND {
+                for i in 0..o.0 {}
+                o.0
+            } else { error(format!("Unterminated function: \'{}\' at #{}", self.path, ln)) } }
             Err(e) => error(e)
         };
         rem
@@ -223,29 +223,26 @@ impl MCFunction {
             if pack.vb >= 1 {
                 println!("Found function \'{}\' at #{}", mcf.path, pack.ln);
             }
-            let rem = mcf.find_block(&pack.lines, pack.ln);
+            let rem = mcf.extract_block(&pack.lines, pack.ln);
             pack.functions.push(mcf);
             rem
         } else {
             error(format!(
                 "Expected open bracket \'{} {}\'<-- [HERE] at #{}",
                 key_1, key_2, pack.ln
-            ));
+            ))
         }
     }
 }
 
-pub struct Statement {
-    line: String,
-    action: String,
-}
-
-struct Blocker {
+pub struct Blocker {
     stack: Vec<char>,
     string: bool,
 }
 
 impl Blocker {
+    pub const NOT_FOUND: usize = 404_0000000;
+
     fn new() -> Blocker {
         Blocker {
             stack: Vec::new(),
@@ -253,29 +250,63 @@ impl Blocker {
         }
     }
 
-    pub fn find_size_vec(&self, lines: &Vec<String>) -> Result<usize, String> {
-        Ok(1)
+    pub fn find_size_vec(&mut self, lines: &Vec<String>, offset: usize) -> Result<(usize, usize), String> {
+        let mut c: usize = 0;
+        loop {
+            if c >= lines.len() {
+                return Ok((Blocker::NOT_FOUND, 0));
+            }
+            let r = self.find_size(&lines[c], if c == 0 { offset } else { 0 })?;
+            if r != Blocker::NOT_FOUND {
+                return Ok((c, r));
+            }
+            c += 1;
+        }
     }
 
-    pub fn find_size(&mut self, line: &String) -> Result<usize, String> {
+    pub fn find_size(&mut self, line: &String, offset: usize) -> Result<usize, String> {
         let mut cs = line.chars();
-        let mut pos: usize = 0;
+        if offset > 0 {
+            cs.nth(offset - 1);
+        }
+        let mut pos: usize = offset;
         while let Some(c) = cs.next() {
             pos += 1;
             match c {
-                '\\' => { cs.nth(1); }
+                '\\' => {
+                    cs.next();
+                    pos += 1;
+                }
                 '{' if !self.string => self.stack.push(c),
-                '}' if !self.string => { if self.stack.last().eq(&Some(&'{')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' at {}", c, pos)); } },
+                '}' if !self.string => { if self.stack.last().eq(&Some(&'{')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' at {}", c, pos)); } }
                 '(' if !self.string => self.stack.push(c),
-                ')' if !self.string => { if self.stack.last().eq(&Some(&'(')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' at {}", c, pos)); } },
+                ')' if !self.string => { if self.stack.last().eq(&Some(&'(')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' at {}", c, pos)); } }
                 '[' if !self.string => self.stack.push(c),
-                ']' if !self.string => { if self.stack.last().eq(&Some(&'[')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' at {}", c, pos)); } },
+                ']' if !self.string => { if self.stack.last().eq(&Some(&'[')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' at {}", c, pos)); } }
+                '\'' => {
+                    if self.string {
+                        self.string = !self.stack.last().eq(&Some(&'\''));
+                        if !self.string { self.stack.pop(); }
+                    } else {
+                        self.stack.push(c);
+                        self.string = true;
+                    }
+                }
+                '\"' => {
+                    if self.string {
+                        self.string = !self.stack.last().eq(&Some(&'\"'));
+                        if !self.string { self.stack.pop(); }
+                    } else {
+                        self.stack.push(c);
+                        self.string = true;
+                    }
+                }
                 _ => {}
             }
             if self.stack.len() == 0 {
                 return Ok(pos);
             }
         }
-        Ok(usize::MAX)
+        Ok(Blocker::NOT_FOUND)
     }
 }

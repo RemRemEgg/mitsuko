@@ -6,7 +6,7 @@ pub fn print_lines(input: &Datapack) {
     }
 }
 
-pub fn trim_white_space(input: Vec<String>) -> (Vec<String>, usize) {
+pub fn _trim_white_space(input: Vec<String>) -> (Vec<String>, usize) {
     let mut out = Vec::new();
     let mut c: usize = 0usize;
     for i in input {
