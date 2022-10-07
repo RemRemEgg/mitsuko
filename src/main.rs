@@ -43,10 +43,10 @@ fn overthrow () {}
 ",
         );
     }
-    compile(contents);
+    make_pack(contents);
 }
 
-fn compile(input: String) {
+fn make_pack(input: String) {
     status("Compiling".to_string());
     let t_total = Instant::now();
     let lines = input
@@ -193,7 +193,14 @@ fn set_arg(arg: &str, val: &str, mut pack: &mut Datapack) {
 
 
 fn compile_pack(mut pack: Datapack) -> Datapack {
+    for function in pack.functions {
+        *function = compile_function(*function, &pack);
+    }
     pack
+}
+
+fn compile_function(function: MCFunction, pack: &Datapack) -> MCFunction {
+    function
 }
 
 
@@ -281,7 +288,7 @@ impl MCFunction {
     }
 
     pub fn is_valid_fn(function: &str) -> bool {
-        let find = Regex::new("[a-z0-9][a-z0-9/_]*[a-z0-9]\\(\\);*")
+        let find = Regex::new("([a-z0-9_][a-z0-9_/]*[a-z0-9_]|[a-z0-9_])\\(\\);*")
             .unwrap()
             .find(function);
         return if find.is_none() {
