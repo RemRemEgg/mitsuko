@@ -1,32 +1,47 @@
 # Tags:
 remgine (bool)
-optimizations (0..4)
+    -> Is remgine enabled
+optimizations (0..?)
+    -> How far to optimize code
 namespace (String)
+    -> Datapack's namespace
 name (String)
+    -> Datapack's name
 debug (0..3)
+    -> Debug verbosity
 
 # Blocks:
-if [!]<statement> : **
+if [!]<statement> : ** -> execute <if | unless> <statement> run **
 ifs [!]<statement> {
     **
-}
+} -> function + execute <if | unless> <statement> run function
 
 # Code:
 <function>();
+    -> function <function>
 cmd <command> [args...]
+    -> <command> [args...]
 $var = < num | math | $var | @nbt >
+    -> scoreboard players <operation | set> <var> [=] <other>
 score $<var> < + | - | / | * | < | > | <> | % > < num | $var >
+    -> [set temp] + scoreboard players operation <var> <operation> <other | temp>
 exe < as | at | ast > @<selector> < ... | run > **
+    -> execute <as | at> <selector> [at @s] ... run **
 
 # Statements:
 $<var> < = | < | > | <= | >= | matches > < $var | range >
+    -> score <var> <operation> <other | range>
 predicate <predicate>
+    <->
 
 ## Requires remgine
 
 # Code:
 rmm @<selector> < num | $var >
+    -> scoreboard players <set | operation> <selector> rem.rmm <add | = > <other | num> + function rem:actions/rmm
 csel player from id < num | $var >
+    -> scoreboard players <set | operation> $temp < = | set> <other | num> + rem.id  function rem:actions/csel_player_id
 
 # Statements:
 random <num>
+    -> if predicate rem:rnd/<num>
