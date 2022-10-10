@@ -193,16 +193,27 @@ fn set_arg(arg: &str, val: &str, mut pack: &mut Datapack) {
 
 
 fn compile_pack(mut pack: Datapack) -> Datapack {
-    for function in pack.functions {
-        *function = compile_function(*function, &pack);
+    for fi in 0..pack.functions.len() {
+        compile_function(fi, &mut pack);
     }
     pack
 }
 
-fn compile_function(function: MCFunction, pack: &Datapack) -> MCFunction {
-    function
+fn compile_function(fi: usize, mut pack: &mut Datapack) {
+    let p = &*pack;
+    let mut function = &mut pack.functions[fi];
+    while function.lines.len() > 0 {
+        let line = &function.lines[0];
+        let mut rem = compile_function_line(&function.lines, p);
+        for _ in 0..rem {
+            function.lines.remove(0);
+        }
+    }
 }
 
+fn compile_function_line(lines: &Vec<String>, pack : &Datapack) -> usize {
+    1
+}
 
 fn clean_pack(mut pack: Datapack) -> Datapack {
     for fi in 0..pack.functions.len() {
