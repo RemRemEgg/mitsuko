@@ -9,18 +9,18 @@
 fn main() {}
 
 fn init() {
-    balls();
+    fun/balls();
     hubjub();
     //Should this be called?
-    overthrow();
+    fun/overthrow();
 }
 
 fn fun/balls() {
     cmd say BALLS
     cmd say OR
     cmd say DEATH
-    cmd kill @s
-    cmd me didn't have enough balls *
+    cmd kill s
+    cmd me didn\'t have enough balls
 }
 
 // This is a bad function!!!
