@@ -9,10 +9,10 @@
 fn main() {}
 
 fn init() {
-    fun/balls();
-    hubjub();
+    fun/balls()
+    math:sqrt()
     //Should this be called?
-    fun/overthrow();
+    fun/overthrow()
 }
 
 fn fun/balls() {
@@ -21,6 +21,7 @@ fn fun/balls() {
     cmd say DEATH
     cmd kill s
     cmd me didn\'t have enough balls
+    ligma()
 }
 
 // This is a bad function!!!
