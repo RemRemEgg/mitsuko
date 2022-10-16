@@ -43,22 +43,23 @@ fn overthrow () {}
 ",
         );
     }
-    make_pack(contents);
+    let pack = make_pack(contents);
+    generate_file(pack);
 }
 
-fn make_pack(input: String) {
+fn make_pack(input: String) -> Datapack {
     status("Compiling".to_string());
     let t_total = Instant::now();
     let lines = input
         .split("\n")
         .collect::<Vec<&str>>()
         .iter()
-        .map(|s| String::from(String::from(*s).trim()))
+        .map(|s| String::from((*s).trim()))
         .collect::<Vec<String>>();
 
     let t = lines.len();
 
-    let mut pack = Datapack::new(lines, String::from("ex"));
+    let mut pack = Datapack::new(lines, String::from("ex:"));
 
     let t_scan = Instant::now();
     pack = scan_pack(pack);
@@ -93,6 +94,8 @@ fn make_pack(input: String) {
     ));
 
     print_warnings(&pack);
+
+    pack
 }
 
 fn scan_pack(mut pack: Datapack) -> Datapack {
@@ -178,7 +181,7 @@ fn set_arg(arg: &str, val: &str, mut pack: &mut Datapack) {
     match arg {
         "remgine" => pack.remgine = val.to_uppercase().eq("TRUE"),
         "optimizations" => pack.opt_level = min(val.parse::<u8>().unwrap_or(0u8), 4u8),
-        "namespace" => pack.namespace = val.to_string(),
+        "namespace" => pack.namespace = val.to_string() + ":",
         "name" => pack.name = val.to_string(),
         "debug" => pack.vb = min(val.parse::<i32>().unwrap_or(0), 3),
         _ => {
@@ -193,30 +196,47 @@ fn set_arg(arg: &str, val: &str, mut pack: &mut Datapack) {
 
 
 fn compile_pack(mut pack: Datapack) -> Datapack {
-    let mut i = 0;
+    pack.ln = 0;
     'functions: loop {
-        if i > pack.functions.len() {
+        if pack.ln >= pack.functions.len() {
             break 'functions pack;
         }
-        pack.ln = 0;
+        let mut ln = 1;
         'lines: loop {
-            let rem = compile_function_line(&pack.functions[i].lines, &pack);
-            pack.ln += rem;
-            for _ in 0..rem {
-                pack.functions[i].lines.remove(0);
-            }
-            if pack.functions[i].lines.len() == 0 {
+            if pack.functions[pack.ln].lines.len() == 0 {
                 break 'lines;
             }
+            let rem = compile_function_line(&mut pack, ln);
+            for _ in 0..rem {
+                pack.functions[pack.ln].lines.remove(0);
+            }
+            ln += rem;
         }
-        i += 1;
+        pack.ln += 1;
     }
 }
 
-fn compile_function_line(lines: &Vec<String>, pack : &Datapack) -> usize {
-    let line = lines[0].to_owned();
-
-    1
+fn compile_function_line(pack: &mut Datapack, ln: usize) -> usize {
+    let function = &mut pack.functions[pack.ln];
+    let line = function.lines[0].to_owned();
+    let keys = line.split(" ").collect::<Vec<_>>();
+    if keys.len() == 0 {
+        return 1;
+    }
+    match keys[0] {
+        "cmd" => {
+            function.commands.push(line[4..].to_string());
+            1
+        }
+        f @ _ => {
+            if MCFunction::is_valid_fn(f) {
+                let fnn = f[..f.len() - 2].to_string();
+                function.calls.push((fnn, function.ln + ln));
+                function.commands.push(["function ", if f.contains(":") { "" } else { &pack.namespace }, f].join(""));
+            }
+            1
+        }
+    }
 }
 
 fn clean_pack(mut pack: Datapack) -> Datapack {
@@ -224,11 +244,17 @@ fn clean_pack(mut pack: Datapack) -> Datapack {
         for ci in 0..pack.functions[fi].calls.len() {
             let c = &pack.functions[fi].calls[ci];
             if !pack.functions.iter().any(|f| -> bool { f.path.eq(&c.0) }) {
-                warn(format!("No such function '{}' found @{}", c.0, c.1), &mut pack);
+                warn(format!("Unknown or undefined function '{}' found @{}", c.0, c.1), &mut pack);
             }
         }
     }
     pack
+}
+
+fn generate_file(pack: Datapack) {
+    fs::create_dir_all("/generated").unwrap_or_else(|e| {
+        error(format!("Could not generate datapack folder: {e}"));
+    });
 }
 
 pub struct Datapack {
@@ -271,18 +297,20 @@ impl Display for Datapack {
 
 pub struct MCFunction {
     lines: Vec<String>,
-    _commands: Vec<String>,
+    commands: Vec<String>,
     path: String,
     calls: Vec<(String, usize)>,
+    ln: usize,
 }
 
 impl MCFunction {
-    fn new(name: &str) -> MCFunction {
+    fn new(name: &str, ln: usize) -> MCFunction {
         MCFunction {
             lines: vec![],
-            _commands: vec![],
+            commands: vec![],
             path: name[..name.len() - 2].to_string(),
             calls: vec![],
+            ln,
         }
     }
 
@@ -303,7 +331,7 @@ impl MCFunction {
     }
 
     pub fn is_valid_fn(function: &str) -> bool {
-        let find = Regex::new("([a-z0-9_][a-z0-9_/]*[a-z0-9_]|[a-z0-9_])\\(\\);*")
+        let find = Regex::new("([a-z_]+:)?([a-z0-9_][a-z0-9_/]*[a-z0-9_]|[a-z0-9_])\\(\\)")
             .unwrap()
             .find(function);
         return if find.is_none() {
@@ -315,7 +343,7 @@ impl MCFunction {
 
     fn compile_from(keys: Vec<&str>, key_1: &str, key_2: &str, pack: &mut Datapack) -> usize {
         if keys.get(2).unwrap_or(&"").starts_with("{") {
-            let mut mcf = MCFunction::new(key_2);
+            let mut mcf = MCFunction::new(key_2, pack.ln);
             if pack.functions.iter().any(|fun| -> bool { fun.path.eq(&mcf.path) }) {
                 error(format!("Duplicate function name \'{}\' @{}", mcf.path, pack.ln));
             }
