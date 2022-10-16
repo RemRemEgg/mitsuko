@@ -16,7 +16,11 @@ fn init() {
 }
 
 fn fun/balls() {
-
+    cmd say BALLS
+    cmd say OR
+    cmd say DEATH
+    cmd kill @s
+    cmd me didn't have enough balls *
 }
 
 // This is a bad function!!!
