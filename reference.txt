@@ -9,6 +9,8 @@ name (String)
     -> Datapack's name
 debug (0..3)
     -> Debug verbosity
+comments (bool)
+    -> Should comments + whitespace be saved
 
 # Blocks:
 if [!]<statement> : ** -> execute <if | unless> <statement> run **
@@ -17,6 +19,8 @@ ifs [!]<statement> {
 } -> function + execute <if | unless> <statement> run function
 
 # Code:
+// Comment
+    -> Parses to '# <comment>' if #[comments = true]
 <function>();
     -> function <function>
 cmd <command> [args...]

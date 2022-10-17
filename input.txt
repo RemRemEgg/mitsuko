@@ -1,9 +1,10 @@
-#[debug=0]
-#[name=Generation Test]
-#[namespace=ms]
-#[remgine=false]
-#[dead=true]
-//This is a comment
+#[debug = 0]
+#[name = Generation Test]
+#[namespace = gen_test]
+#[remgine = false]
+#[dead = true]
+#[comments = true]
+// This is a comment
 // And Another
 
 fn main() {}
@@ -11,7 +12,8 @@ fn main() {}
 fn init() {
     fun/balls()
     math:sqrt()
-    //Should this be called?
+
+    // Should this be called?
     fun/overthrow()
 }
 
@@ -19,8 +21,8 @@ fn fun/balls() {
     cmd say BALLS
     cmd say OR
     cmd say DEATH
-    cmd kill s
-    cmd me didn\'t have enough balls
+    cmd kill @s
+    cmd me didn't have enough balls
     ligma()
 }
 

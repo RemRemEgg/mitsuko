@@ -3,6 +3,8 @@ use std::fmt::{Display, Formatter};
 use regex::Regex;
 use server::*;
 use std::fs;
+use std::fs::File;
+use std::io::Write;
 use std::time::Instant;
 
 mod server;
@@ -44,7 +46,15 @@ fn overthrow () {}
         );
     }
     let pack = make_pack(contents);
-    generate_file(pack);
+
+    let save_time = Instant::now();
+    save_datapack(pack);
+    status(format!(
+        "Saved Datapack in {} µs",
+        save_time.elapsed().as_micros()
+    ));
+    status("Finished".to_string());
+    loop {}
 }
 
 fn make_pack(input: String) -> Datapack {
@@ -127,7 +137,7 @@ fn scan_pack_line(line: String, pack: &mut Datapack) -> usize {
     match key_1 {
         "fn" => {
             let key_2 = *keys.get(1).unwrap_or(&"");
-            if MCFunction::is_valid_fn(key_2) {
+            if MCFunction::is_valid_fn(key_2) && !key_2.contains(":") {
                 rem = MCFunction::compile_from(keys, key_1, key_2, pack);
             } else {
                 error(format!(
@@ -184,6 +194,7 @@ fn set_arg(arg: &str, val: &str, mut pack: &mut Datapack) {
         "namespace" => pack.namespace = val.to_string() + ":",
         "name" => pack.name = val.to_string(),
         "debug" => pack.vb = min(val.parse::<i32>().unwrap_or(0), 3),
+        "comments" => pack.comments = val.to_uppercase().eq("TRUE"),
         _ => {
             if pack.vb >= 1 { warn(format!("Unknown arg: \'{}\' (value = \'{}\') @{}", arg, val, pack.ln), &mut pack); }
             suc = false
@@ -228,6 +239,14 @@ fn compile_function_line(pack: &mut Datapack, ln: usize) -> usize {
             function.commands.push(line[4..].to_string());
             1
         }
+        "//" if pack.comments => {
+            function.commands.push(["#", &line[2..]].join(""));
+            1
+        }
+        "" if pack.comments => {
+            function.commands.push("".to_string());
+            1
+        }
         f @ _ => {
             if MCFunction::is_valid_fn(f) {
                 let fnn = f[..f.len() - 2].to_string();
@@ -251,9 +270,39 @@ fn clean_pack(mut pack: Datapack) -> Datapack {
     pack
 }
 
-fn generate_file(pack: Datapack) {
-    fs::create_dir_all("/generated").unwrap_or_else(|e| {
-        error(format!("Could not generate datapack folder: {e}"));
+fn save_datapack(pack: Datapack) {
+    let root_path = "./generated/".to_string() + &*pack.name;
+    let pack_path = &*[&*root_path, "/data/", &pack.namespace[0..(pack.namespace.len() - 1)]].join("");
+
+    make_folder(&*root_path);
+
+    let mut meta = File::create([&*root_path, "/pack.mcmeta"].join("")).expect("Could not make 'pack.mcmeta'");
+    let meta_template = include_str!("pack.mcmeta").replace("{VERS}", "10").replace("{DESC}", "Datapack"); //TODO: Add args for these
+    meta.write_all(meta_template.as_bytes()).expect("Could not make 'pack.mcmeta'");
+
+    make_folder(&*pack_path);
+
+    let fn_path = &*[&*pack_path, "/functions"].join("");
+
+    make_folder(&*fn_path);
+
+    for function in pack.functions {
+        let path = &*[fn_path, "/", &*function.path, ".mcfunction"].join("");
+        if function.path.contains("/") {
+            let mut path = function.path.split("/").collect::<Vec<_>>();
+            path.pop();
+            path.insert(0, "/");
+            path.insert(0, &*fn_path);
+            make_folder(&*path.join("/"));
+        }
+        let mut file = File::create(path).expect(&*["Could not make function '", path, "'"].join(""));
+        file.write_all(function.commands.join("\n").as_bytes()).expect(&*["Could not write function '", path, "'"].join(""));
+    }
+}
+
+fn make_folder(path: &str) {
+    fs::create_dir_all(path).unwrap_or_else(|e| {
+        error(format!("Could not generate '{path}' folder: {e}"));
     });
 }
 
@@ -262,7 +311,7 @@ pub struct Datapack {
     vb: i32,
     remgine: bool,
     opt_level: u8,
-    _comments: bool,
+    comments: bool,
     _call: bool,
     namespace: String,
     name: String,
@@ -278,7 +327,7 @@ impl Datapack {
             vb: VERBOSE,
             remgine: true,
             opt_level: 0,
-            _comments: false,
+            comments: false,
             _call: false,
             namespace,
             name: "Untitled".to_string(),
@@ -315,15 +364,18 @@ impl MCFunction {
     }
 
     fn extract_block(&mut self, lines: &Vec<String>, _ln: usize) -> usize {
+        if lines[0].ends_with('}') {
+            return 1;
+        }
         let mut b = Blocker::new();
-        let rem = match b.find_size_vec(lines, lines[0].find('{').unwrap_or(0)) {
+        let rem = match b.find_rapid_close(lines, '}') {
             Ok(o) => {
-                if o.0 != Blocker::NOT_FOUND {
-                    for i in 1..o.0 {
+                if o != Blocker::NOT_FOUND {
+                    for i in 1..o {
                         self.lines.push(lines[i].to_string());
                     }
-                    o.0 + 1
-                } else { error(format!("Unterminated function: \'{}\' within {}", self.path, self.path)) }
+                    o + 1
+                } else { error(format!("Unterminated function: \'{}\'", self.path)) }
             }
             Err(e) => error(e)
         };
@@ -380,6 +432,19 @@ impl Blocker {
         }
     }
 
+    pub fn find_rapid_close(&mut self, lines: &Vec<String>, closer: char) -> Result<usize, String> {
+        let mut c: usize = 0;
+        loop {
+            if c >= lines.len() {
+                return Ok(Blocker::NOT_FOUND);
+            }
+            if lines[c].trim().starts_with(closer) {
+                return Ok(c);
+            }
+            c += 1;
+        }
+    }
+
     pub fn find_size_vec(&mut self, lines: &Vec<String>, offset: usize) -> Result<(usize, usize), String> {
         let mut c: usize = 0;
         loop {
@@ -402,7 +467,7 @@ impl Blocker {
         if offset > 0 {
             cs.nth(offset - 1);
         }
-        let mut pos: usize = offset;
+        let mut pos: usize = 0;
         while let Some(c) = cs.next() {
             pos += 1;
             match c {
@@ -411,11 +476,11 @@ impl Blocker {
                     pos += 1;
                 }
                 '{' if !self.string => self.stack.push(c),
-                '}' if !self.string => { if self.stack.last().eq(&Some(&'{')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' @({})", c, pos)); } }
+                '}' if !self.string => { if self.stack.last().eq(&Some(&'{')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' @({})", c, pos + offset)); } }
                 '(' if !self.string => self.stack.push(c),
-                ')' if !self.string => { if self.stack.last().eq(&Some(&'(')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' @({})", c, pos)); } }
+                ')' if !self.string => { if self.stack.last().eq(&Some(&'(')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' @({})", c, pos + offset)); } }
                 '[' if !self.string => self.stack.push(c),
-                ']' if !self.string => { if self.stack.last().eq(&Some(&'[')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' @({})", c, pos)); } }
+                ']' if !self.string => { if self.stack.last().eq(&Some(&'[')) { self.stack.pop(); } else { return Err(format!("Unexpected \'{}\' @({})", c, pos + offset)); } }
                 '\'' => {
                     if self.string {
                         self.string = !self.stack.last().eq(&Some(&'\''));
@@ -434,10 +499,18 @@ impl Blocker {
                         self.string = true;
                     }
                 }
+                '/' => {
+                    if cs.next().unwrap_or(' ').eq(&'/') {
+                        return Ok(Blocker::NOT_FOUND)
+                    } else {
+                        cs = line.chars();
+                        cs.nth(pos - 1);
+                    }
+                }
                 _ => {}
             }
             if self.stack.len() == 0 && !self.string {
-                return Ok(pos);
+                return Ok(pos + offset);
             }
         }
         Ok(Blocker::NOT_FOUND)
