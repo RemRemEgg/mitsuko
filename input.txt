@@ -4,6 +4,7 @@
 #[remgine = false]
 #[dead = true]
 #[comments = true]
+#[version = 11]
 // This is a comment
 // And Another
 
@@ -12,6 +13,8 @@ fn main() {}
 fn init() {
     fun/balls()
     math:sqrt()
+
+/
 
     // Should this be called?
     fun/overthrow()

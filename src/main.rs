@@ -5,12 +5,14 @@ use server::*;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
-use std::time::Instant;
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 
 mod server;
 mod tests;
 
 static VERBOSE: i32 = 0;
+static CURRENT_PACK_VERSION: u8 = 10;
 
 fn main() {
     let contents;
@@ -54,7 +56,7 @@ fn overthrow () {}
         save_time.elapsed().as_micros()
     ));
     status("Finished".to_string());
-    loop {}
+    sleep(Duration::from_secs(0));
 }
 
 fn make_pack(input: String) -> Datapack {
@@ -195,6 +197,7 @@ fn set_arg(arg: &str, val: &str, mut pack: &mut Datapack) {
         "name" => pack.name = val.to_string(),
         "debug" => pack.vb = min(val.parse::<i32>().unwrap_or(0), 3),
         "comments" => pack.comments = val.to_uppercase().eq("TRUE"),
+        "version" => pack.version = val.parse::<u8>().unwrap_or(CURRENT_PACK_VERSION),
         _ => {
             if pack.vb >= 1 { warn(format!("Unknown arg: \'{}\' (value = \'{}\') @{}", arg, val, pack.ln), &mut pack); }
             suc = false
@@ -277,7 +280,7 @@ fn save_datapack(pack: Datapack) {
     make_folder(&*root_path);
 
     let mut meta = File::create([&*root_path, "/pack.mcmeta"].join("")).expect("Could not make 'pack.mcmeta'");
-    let meta_template = include_str!("pack.mcmeta").replace("{VERS}", "10").replace("{DESC}", "Datapack"); //TODO: Add args for these
+    let meta_template = include_str!("pack.mcmeta").replace("{VERS}", &*pack.version.to_string()).replace("{DESC}", "Datapack"); //TODO: Add args for desc
     meta.write_all(meta_template.as_bytes()).expect("Could not make 'pack.mcmeta'");
 
     make_folder(&*pack_path);
@@ -309,6 +312,7 @@ fn make_folder(path: &str) {
 pub struct Datapack {
     ln: usize,
     vb: i32,
+    version: u8,
     remgine: bool,
     opt_level: u8,
     comments: bool,
@@ -325,6 +329,7 @@ impl Datapack {
         Datapack {
             ln: 1,
             vb: VERBOSE,
+            version: CURRENT_PACK_VERSION,
             remgine: true,
             opt_level: 0,
             comments: false,
