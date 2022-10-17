@@ -20,7 +20,7 @@ ifs [!]<statement> {
 
 # Code:
 // Comment
-    -> Parses to '# <comment>' if #[comments = true]
+    -> Parses to '# <comment>' if #[comments = true] and a space is placed after '//'
 / Ignored Whitespace
     -> Will never appear on compilation
 <function>();

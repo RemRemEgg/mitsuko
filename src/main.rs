@@ -16,26 +16,25 @@ static CURRENT_PACK_VERSION: u8 = 10;
 
 fn main() {
     let contents;
-    if true {
+    if 1 == 1 {
         contents = fs::read_to_string("input.txt").expect("Should have been able to read the file");
     } else {
         contents = String::from(
-            "///This is a comment
+            "// This is a comment
 // And Another
 #[remgine=false]
 #[namespace=ms]
 #[dead=true]
 
 fn main() {
-fn init() {
-fn over_load() {
-fn baller()
 }
-}
-    balls();
+fn init() {}
+fn over_load() {}
+fn baller() {
+    balls()
 
-    //Should this be called?
-    overthrow();
+    // Should this be called?
+    overthrow()
 }
 
 fn balls() {
@@ -43,7 +42,7 @@ fn balls() {
 }
 
 // This is a bad function!!!
-fn overthrow () {}
+fn overthrow() {}
 ",
         );
     }

@@ -11,10 +11,12 @@
 fn main() {}
 
 fn init() {
+    cmd tellraw @a {"text":"Poggers????","color":"}
+
     fun/balls()
     math:sqrt()
 
-/
+/}
 
     // Should this be called?
     fun/overthrow()
