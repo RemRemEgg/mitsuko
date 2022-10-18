@@ -99,8 +99,8 @@ fn make_pack(input: String) -> Datapack {
     status(format!(
         "Finished {} [opt {} + {}remgine] in {} µs\n",
         pack,
-        pack.opt_level,
-        if pack.remgine { "" } else { "no " },
+        pack.settings.opt_level,
+        if pack.settings.remgine { "" } else { "no " },
         t_total.elapsed().as_micros()
     ));
 
@@ -139,7 +139,7 @@ fn scan_pack_line(line: String, pack: &mut Datapack) -> usize {
         "fn" => {
             let key_2 = *keys.get(1).unwrap_or(&"");
             if MCFunction::is_valid_fn(key_2) && !key_2.contains(":") {
-                rem = MCFunction::compile_from(keys, key_1, key_2, pack);
+                rem = MCFunction::extract_from(keys, key_1, key_2, pack);
             } else {
                 error(format!(
                     "Invalid function name: \'{}\' @{}",
@@ -163,7 +163,7 @@ fn scan_pack_char(line: String, pack: &mut Datapack) -> usize {
     match char_1 {
         '#' => test_arg(line, pack),
         '/' | '§' | ' ' => {
-            if pack.vb >= 3 {
+            if pack.settings.vb >= 3 {
                 debug(format!("Found non-code line @{}", pack.ln))
             }
         }
@@ -190,19 +190,19 @@ fn test_arg(line: String, pack: &mut Datapack) {
 fn set_arg(arg: &str, val: &str, mut pack: &mut Datapack) {
     let mut suc = true;
     match arg {
-        "remgine" => pack.remgine = val.to_uppercase().eq("TRUE"),
-        "optimizations" => pack.opt_level = min(val.parse::<u8>().unwrap_or(0u8), 4u8),
-        "namespace" => pack.namespace = val.to_string() + ":",
-        "name" => pack.name = val.to_string(),
-        "debug" => pack.vb = min(val.parse::<i32>().unwrap_or(0), 3),
-        "comments" => pack.comments = val.to_uppercase().eq("TRUE"),
-        "version" => pack.version = val.parse::<u8>().unwrap_or(CURRENT_PACK_VERSION),
+        "remgine" => pack.settings.remgine = val.to_uppercase().eq("TRUE"),
+        "optimizations" => pack.settings.opt_level = min(val.parse::<u8>().unwrap_or(0u8), 4u8),
+        "namespace" => pack.settings.namespace = val.to_string() + ":",
+        "name" => pack.settings.name = val.to_string(),
+        "debug" => pack.settings.vb = min(val.parse::<i32>().unwrap_or(0), 3),
+        "comments" => pack.settings.comments = val.to_uppercase().eq("TRUE"),
+        "version" => pack.settings.version = val.parse::<u8>().unwrap_or(CURRENT_PACK_VERSION),
         _ => {
-            if pack.vb >= 1 { warn(format!("Unknown arg: \'{}\' (value = \'{}\') @{}", arg, val, pack.ln), &mut pack); }
+            if pack.settings.vb >= 1 { warn(format!("Unknown arg: \'{}\' (value = \'{}\') @{}", arg, val, pack.ln), &mut pack); }
             suc = false
         }
     }
-    if suc && pack.vb >= 1 {
+    if suc && pack.settings.vb >= 1 {
         debug(format!("Set arg \'{}\' to \'{}\'", arg, val));
     }
 }
@@ -214,49 +214,8 @@ fn compile_pack(mut pack: Datapack) -> Datapack {
         if pack.ln >= pack.functions.len() {
             break 'functions pack;
         }
-        let mut ln = 1;
-        'lines: loop {
-            if pack.functions[pack.ln].lines.len() == 0 {
-                break 'lines;
-            }
-            let rem = compile_function_line(&mut pack, ln);
-            for _ in 0..rem {
-                pack.functions[pack.ln].lines.remove(0);
-            }
-            ln += rem;
-        }
+        pack.functions[pack.ln].compile(&pack.settings);
         pack.ln += 1;
-    }
-}
-
-fn compile_function_line(pack: &mut Datapack, ln: usize) -> usize {
-    let function = &mut pack.functions[pack.ln];
-    let line = function.lines[0].to_owned();
-    let keys = line.split(" ").collect::<Vec<_>>();
-    if keys.len() == 0 {
-        return 1;
-    }
-    match keys[0] {
-        "cmd" => {
-            function.commands.push(line[4..].to_string());
-            1
-        }
-        "//" if pack.comments => {
-            function.commands.push(["#", &line[2..]].join(""));
-            1
-        }
-        "" if pack.comments => {
-            function.commands.push("".to_string());
-            1
-        }
-        f @ _ => {
-            if MCFunction::is_valid_fn(f) {
-                let fnn = f[..f.len() - 2].to_string();
-                function.calls.push((fnn, function.ln + ln));
-                function.commands.push(["function ", if f.contains(":") { "" } else { &pack.namespace }, f].join(""));
-            }
-            1
-        }
     }
 }
 
@@ -273,13 +232,13 @@ fn clean_pack(mut pack: Datapack) -> Datapack {
 }
 
 fn save_datapack(pack: Datapack) {
-    let root_path = "./generated/".to_string() + &*pack.name;
-    let pack_path = &*[&*root_path, "/data/", &pack.namespace[0..(pack.namespace.len() - 1)]].join("");
+    let root_path = "./generated/".to_string() + &*pack.settings.name;
+    let pack_path = &*[&*root_path, "/data/", &pack.settings.namespace[0..(pack.settings.namespace.len() - 1)]].join("");
 
     make_folder(&*root_path);
 
     let mut meta = File::create([&*root_path, "/pack.mcmeta"].join("")).expect("Could not make 'pack.mcmeta'");
-    let meta_template = include_str!("pack.mcmeta").replace("{VERS}", &*pack.version.to_string()).replace("{DESC}", "Datapack"); //TODO: Add args for desc
+    let meta_template = include_str!("pack.mcmeta").replace("{VERS}", &*pack.settings.version.to_string()).replace("{DESC}", "Datapack"); //TODO: Add args for desc
     meta.write_all(meta_template.as_bytes()).expect("Could not make 'pack.mcmeta'");
 
     make_folder(&*pack_path);
@@ -308,16 +267,19 @@ fn make_folder(path: &str) {
     });
 }
 
-pub struct Datapack {
-    ln: usize,
+struct Settings {
     vb: i32,
     version: u8,
     remgine: bool,
     opt_level: u8,
     comments: bool,
-    _call: bool,
     namespace: String,
     name: String,
+}
+
+pub struct Datapack {
+    settings: Settings,
+    ln: usize,
     lines: Vec<String>,
     functions: Vec<MCFunction>,
     warnings: Vec<String>,
@@ -326,15 +288,16 @@ pub struct Datapack {
 impl Datapack {
     fn new(lines: Vec<String>, namespace: String) -> Datapack {
         Datapack {
+            settings: Settings {
+                vb: VERBOSE,
+                version: CURRENT_PACK_VERSION,
+                remgine: true,
+                opt_level: 0,
+                comments: false,
+                namespace,
+                name: "Untitled".to_string(),
+            },
             ln: 1,
-            vb: VERBOSE,
-            version: CURRENT_PACK_VERSION,
-            remgine: true,
-            opt_level: 0,
-            comments: false,
-            _call: false,
-            namespace,
-            name: "Untitled".to_string(),
             lines,
             functions: vec![],
             warnings: vec![],
@@ -344,7 +307,7 @@ impl Datapack {
 
 impl Display for Datapack {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("Datapack['{}' @ '{}' ({}l {}f)]", self.name, self.namespace, self.lines.len(), self.functions.len()))
+        f.write_fmt(format_args!("Datapack['{}' @ '{}' ({}l {}f)]", self.settings.name, self.settings.namespace, self.lines.len(), self.functions.len()))
     }
 }
 
@@ -397,16 +360,16 @@ impl MCFunction {
         };
     }
 
-    fn compile_from(keys: Vec<&str>, key_1: &str, key_2: &str, pack: &mut Datapack) -> usize {
+    fn extract_from(keys: Vec<&str>, key_1: &str, key_2: &str, pack: &mut Datapack) -> usize {
         if keys.get(2).unwrap_or(&"").starts_with("{") {
             let mut mcf = MCFunction::new(key_2, pack.ln);
             if pack.functions.iter().any(|fun| -> bool { fun.path.eq(&mcf.path) }) {
                 error(format!("Duplicate function name \'{}\' @{}", mcf.path, pack.ln));
             }
             let rem = mcf.extract_block(&pack.lines, pack.ln);
-            if pack.vb >= 1 {
+            if pack.settings.vb >= 1 {
                 debug(format!("Found function \'{}\' @{}", mcf.path, pack.ln));
-                if pack.vb >= 2 {
+                if pack.settings.vb >= 2 {
                     debug(format!(" -> {} Lines REM", rem));
                 }
             }
@@ -417,6 +380,53 @@ impl MCFunction {
                 "Expected '{{' after \'{} {}\' @{}",
                 key_1, key_2, pack.ln
             ))
+        }
+    }
+
+    fn compile(&mut self, settings: &Settings) {
+        let mut ln = 1;
+        'lines: loop {
+            if self.lines.len() == 0 {
+                break 'lines;
+            }
+            let rem = self.compile_line(settings, ln);
+            for _ in 0..rem {
+                self.lines.remove(0);
+            }
+            ln += rem;
+        }
+    }
+
+    fn compile_line(&mut self, settings: &Settings, ln: usize) -> usize {
+        let line = self.lines[0].to_owned();
+        let keys = line.split(" ").collect::<Vec<_>>();
+        if keys.len() == 0 {
+            return 1;
+        }
+        match keys[0] {
+            "cmd" => {
+                self.commands.push(line[4..].to_string());
+                1
+            }
+            "//" if settings.comments => {
+                self.commands.push(["#", &line[2..]].join(""));
+                1
+            }
+            "" if settings.comments => {
+                self.commands.push("".to_string());
+                1
+            }
+            f @ _ => {
+                return if MCFunction::is_valid_fn(f) {
+                    let fnn = f[..f.len() - 2].to_string();
+                    self.calls.push((fnn, self.ln + ln));
+                    self.commands.push(["function ", if f.contains(":") { "" } else { &settings.namespace }, f].join(""));
+                    1
+                } else {
+                    self.lines[0] = ["cmd ", &*self.lines[0]].join("");
+                    0
+                };
+            }
         }
     }
 }
@@ -505,7 +515,7 @@ impl Blocker {
                 }
                 '/' => {
                     if cs.next().unwrap_or(' ').eq(&'/') {
-                        return Ok(Blocker::NOT_FOUND)
+                        return Ok(Blocker::NOT_FOUND);
                     } else {
                         cs = line.chars();
                         cs.nth(pos - 1);
