@@ -236,6 +236,9 @@ fn clean_pack(mut pack: Datapack) -> Datapack {
                 warn(format!("Unknown or undefined function '{}' found @{}", c.0, c.1), &mut pack);
             }
         }
+        for i in 0..pack.functions[fi].commands.len() {
+            pack.functions[fi].commands[i] = pack.functions[fi].commands[i].replace(" run execute", "");
+        }
     }
     pack
 }
