@@ -48,18 +48,14 @@ fn overthrow() {}
     }
     let pack = make_pack(contents);
 
-    let save_time = Instant::now();
-    save_datapack(pack);
-    status(format!(
-        "Saved Datapack in {} µs",
-        save_time.elapsed().as_micros()
-    ));
-    status("Finished".to_string());
+    save_pack(pack);
+
+    status("Done".to_string());
     sleep(Duration::from_secs(0));
 }
 
 fn make_pack(input: String) -> Datapack {
-    status("Compiling".to_string());
+    status("Processing...\n".to_string());
     let t_total = Instant::now();
     let lines = input
         .split("\n")
@@ -68,10 +64,9 @@ fn make_pack(input: String) -> Datapack {
         .map(|s| String::from((*s).trim()))
         .collect::<Vec<String>>();
 
-    let t = lines.len();
-
     let mut pack = Datapack::new(lines, String::from("ex:"));
 
+    /* SCAN */
     let t_scan = Instant::now();
     pack = scan_pack(pack);
     status(format!(
@@ -80,15 +75,26 @@ fn make_pack(input: String) -> Datapack {
         t_scan.elapsed().as_micros()
     ));
 
+    /* COMPILE */
     let t_compile = Instant::now();
+    let mut ln_total = 0;
+    pack.functions.iter().for_each(|f| {
+        ln_total += f.lines.len();
+    });
     pack = compile_pack(pack);
+    let mut cm_total = 0;
+    pack.functions.iter().for_each(|f| {
+        cm_total += f.commands.len();
+    });
     status(format!(
-        "Compiled {} lines in {} µs\n",
-        t,
+        "Compiled {} lines into {} commands within {} µs\n",
+        ln_total,
+        cm_total,
         t_compile.elapsed().as_micros()
     ));
 
 
+    /* CLEAN */
     let t_clean = Instant::now();
     pack = clean_pack(pack);
     status(format!(
@@ -96,16 +102,15 @@ fn make_pack(input: String) -> Datapack {
         t_clean.elapsed().as_micros()
     ));
 
+    /* FINISH */
+    print_warnings(&pack);
     status(format!(
-        "Finished {} [opt {} + {}remgine] in {} µs\n",
+        "Finished {} [opt {} + {}remgine] in {} µs",
         pack,
         pack.settings.opt_level,
         if pack.settings.remgine { "" } else { "no " },
         t_total.elapsed().as_micros()
     ));
-
-    print_warnings(&pack);
-
     pack
 }
 
@@ -127,7 +132,7 @@ fn scan_pack(mut pack: Datapack) -> Datapack {
     if !pack.functions.iter().any(|fun| -> bool { fun.path.eq("init") }) {
         warn("No 'init' function found, is this intentional?".to_string(), &mut pack);
     }
-    status("Generated Function Data\n".to_string());
+    status("Generated Function Data".to_string());
     pack
 }
 
@@ -215,6 +220,9 @@ fn compile_pack(mut pack: Datapack) -> Datapack {
         if pack.ln >= pack.functions.len() {
             break 'functions pack;
         }
+        if pack.settings.vb >= 1 {
+            debug(format!("Compiling Function '{}'", pack.functions[pack.ln].path));
+        }
         pack.functions[pack.ln].compile(&pack.settings);
         pack.ln += 1;
     }
@@ -232,7 +240,27 @@ fn clean_pack(mut pack: Datapack) -> Datapack {
     pack
 }
 
-fn save_datapack(pack: Datapack) {
+fn save_pack(pack: Datapack) {
+    let save_time = Instant::now();
+    if pack.settings.vb >= 1 {
+        status(format!(
+            "Saving '{}' @ '{}/generated/'",
+            &pack.settings.name,
+            match std::env::current_exe() {
+                Ok(mut path) => {
+                    path.pop();
+                    path.to_str().unwrap_or("Unknown").to_string().replace('\\',"/")
+                }
+                Err(err) => { err.to_string() }
+            }
+        ));
+    } else {
+        status(format!(
+            "Saving '{}'",
+            &pack.settings.name
+        ));
+    }
+
     let root_path = "./generated/".to_string() + &*pack.settings.name;
     let pack_path = &*[&*root_path, "/data/", &pack.settings.namespace[0..(pack.settings.namespace.len() - 1)]].join("");
 
@@ -260,6 +288,11 @@ fn save_datapack(pack: Datapack) {
         let mut file = File::create(path).expect(&*["Could not make function '", path, "'"].join(""));
         file.write_all(function.commands.join("\n").as_bytes()).expect(&*["Could not write function '", path, "'"].join(""));
     }
+
+    status(format!(
+        "Saved Datapack in {} µs",
+        save_time.elapsed().as_micros()
+    ));
 }
 
 fn make_folder(path: &str) {
@@ -298,7 +331,7 @@ impl Datapack {
                 comments: false,
                 namespace,
                 name: "Untitled".to_string(),
-                description: "A Datapack".to_string()
+                description: "A Datapack".to_string(),
             },
             ln: 1,
             lines,
@@ -397,6 +430,9 @@ impl MCFunction {
                 self.lines.remove(0);
             }
             ln += rem;
+        }
+        if settings.vb >= 2 {
+            debug(format!(" -> Resulted in {} commands", self.commands.len()));
         }
     }
 

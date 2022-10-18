@@ -11,9 +11,8 @@ pub fn print_warnings(pack: &Datapack) {
         status(format!("'{}' Generated {} Warnings: ", pack.settings.name, pack.warnings.len()));
         let mut t = Datapack::new(vec![], "".to_string());
         for (i, e) in pack.warnings.iter().enumerate() {
-            print_warning(format!("|  {}{}", e, if i == pack.warnings.len() - 1 { "\n" } else { "" }), &mut t);
+            print_warning(format!("{}{}", e, if i == pack.warnings.len() - 1 { "\n" } else { "" }), &mut t);
         }
-        println!();
     }
 }
 
@@ -36,7 +35,7 @@ pub fn warn(message: String, pack: &mut Datapack) {
 }
 
 pub fn print_warning(message: String, pack: &mut Datapack) {
-    println!("‼»   [Warning {}] {}", pack.warnings.len(), message);
+    println!("‼»   [{}] {}", pack.warnings.len(), message);
     pack.warnings.push(message);
 }
 
