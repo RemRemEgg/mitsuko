@@ -1,44 +1,47 @@
 # Tags:
-remgine (bool)
-    -> Is remgine enabled
-optimizations (0..?)
-    -> How far to optimize code
-namespace (String)
-    -> Datapack's namespace
-name (String)
-    -> Datapack's name
-debug (0..3)
-    -> Debug verbosity
-comments (bool)
+comments (bool: false)
     -> Should comments + whitespace be saved
+debug (0..3: 0)
+    -> Debug verbosity
+name (String: Untitled)
+    -> Datapack's name
+namespace (String: ex)
+    -> Datapack's namespace
+optimizations (0..?: 0)
+    -> How far to optimize code
+remgine (bool: true)
+    -> Is remgine enabled
+version (int)
+    -> Datapack's Version
 
-# Blocks:
-if [!]<statement> : ** -> execute <if | unless> <statement> run **
-ifs [!]<statement> {
-    **
-} -> function + execute <if | unless> <statement> run function
 
 # Code:
 // Comment
     -> Parses to '# <comment>' if #[comments = true] and a space is placed after '//'
-/ Ignored Whitespace
-    -> Will never appear on compilation
 <function>();
     -> function <function>
+<command> [args...]
+    -> <command> [args...]
 cmd <command> [args...]
     -> <command> [args...]
+if [!]<statement> : **
+    -> execute <if | unless> <statement> run **
 $var = < num | math | $var | @nbt >
     -> scoreboard players <operation | set> <var> [=] <other>
 score $<var> < + | - | / | * | < | > | <> | % > < num | $var >
     -> [set temp] + scoreboard players operation <var> <operation> <other | temp>
 exe < as | at | ast > @<selector> < ... | run > **
     -> execute <as | at> <selector> [at @s] ... run **
+ifs [!]<statement> {
+    **
+}
+    -> function + execute <if | unless> <statement> run function
 
 # Statements:
 $<var> < = | < | > | <= | >= | matches > < $var | range >
     -> score <var> <operation> <other | range>
 predicate <predicate>
-    <->
+    ->predicate <predicate>
 
 ## Requires remgine
 

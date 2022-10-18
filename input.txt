@@ -12,11 +12,12 @@ fn main() {}
 
 fn init() {
     cmd tellraw @a {"text":"Poggers????","color":"}
+    say hey there!
+    setblock ~ ~ ~ gold_block keep
 
     fun/balls()
     math:sqrt()
 
-/}
 
     // Should this be called?
     fun/overthrow()
