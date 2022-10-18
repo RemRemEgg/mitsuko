@@ -1,8 +1,10 @@
 # Tags:
 comments (bool: false)
     -> Should comments + whitespace be saved
-debug (0..3: 0)
+debug (0-2: 0)
     -> Debug verbosity
+description (String: A Datapack)
+    -> Description used in pack.mcmeta (supports §)
 name (String: Untitled)
     -> Datapack's name
 namespace (String: ex)

@@ -1,17 +1,18 @@
-#[debug = 0]
+#[debug = 2]
 #[name = Generation Test]
 #[namespace = gen_test]
 #[remgine = false]
 #[dead = true]
 #[comments = true]
 #[version = 11]
+#[description = §8Testing for Mitsuko]
 // This is a comment
 // And Another
 
 fn main() {}
 
 fn init() {
-    cmd tellraw @a {"text":"Poggers????","color":"}
+    cmd tellraw @a {"text":"Poggers????","color":"red"}
     say hey there!
     setblock ~ ~ ~ gold_block keep
 

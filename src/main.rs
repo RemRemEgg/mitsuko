@@ -163,9 +163,9 @@ fn scan_pack_char(line: String, pack: &mut Datapack) -> usize {
     match char_1 {
         '#' => test_arg(line, pack),
         '/' | '§' | ' ' => {
-            if pack.settings.vb >= 3 {
-                debug(format!("Found non-code line @{}", pack.ln))
-            }
+            // if pack.settings.vb >= 2 {
+            //     debug(format!("Found non-code line @{}", pack.ln))
+            // }
         }
         _ => error(format!("Unexpected token \'{}\' @{}", char_1, pack.ln)),
     }
@@ -197,6 +197,7 @@ fn set_arg(arg: &str, val: &str, mut pack: &mut Datapack) {
         "debug" => pack.settings.vb = min(val.parse::<i32>().unwrap_or(0), 3),
         "comments" => pack.settings.comments = val.to_uppercase().eq("TRUE"),
         "version" => pack.settings.version = val.parse::<u8>().unwrap_or(CURRENT_PACK_VERSION),
+        "description" => pack.settings.description = val.to_string(),
         _ => {
             if pack.settings.vb >= 1 { warn(format!("Unknown arg: \'{}\' (value = \'{}\') @{}", arg, val, pack.ln), &mut pack); }
             suc = false
@@ -238,7 +239,7 @@ fn save_datapack(pack: Datapack) {
     make_folder(&*root_path);
 
     let mut meta = File::create([&*root_path, "/pack.mcmeta"].join("")).expect("Could not make 'pack.mcmeta'");
-    let meta_template = include_str!("pack.mcmeta").replace("{VERS}", &*pack.settings.version.to_string()).replace("{DESC}", "Datapack"); //TODO: Add args for desc
+    let meta_template = include_str!("pack.mcmeta").replace("{VERS}", &*pack.settings.version.to_string()).replace("{DESC}", &pack.settings.description);
     meta.write_all(meta_template.as_bytes()).expect("Could not make 'pack.mcmeta'");
 
     make_folder(&*pack_path);
@@ -275,6 +276,7 @@ struct Settings {
     comments: bool,
     namespace: String,
     name: String,
+    description: String,
 }
 
 pub struct Datapack {
@@ -296,6 +298,7 @@ impl Datapack {
                 comments: false,
                 namespace,
                 name: "Untitled".to_string(),
+                description: "A Datapack".to_string()
             },
             ln: 1,
             lines,
