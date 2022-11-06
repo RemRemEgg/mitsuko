@@ -1,20 +1,24 @@
-# Tags:
+# Meta tags:
 comments (bool: false)
     -> Should comments + whitespace be saved
-debug (0-2: 0)
-    -> Debug verbosity
 description (String: A Datapack)
     -> Description used in pack.mcmeta (supports §)
 name (String: Untitled)
     -> Datapack's name
 namespace (String: ex)
     -> Datapack's namespace
-optimizations (0..?: 0)
-    -> How far to optimize code
 remgine (bool: true)
     -> Is remgine enabled
 version (int)
     -> Datapack's Version
+
+# General Tags:
+debug (0-2: 0)
+    -> Debug verbosity
+optimizations (0..?: 0)
+    -> How far to optimize code
+recursive_replace (0..255: 3)
+    -> How any recursions to go for internal values
 
 
 # Code:
@@ -38,6 +42,10 @@ ifs [!]<statement> {
     **
 }
     -> function + execute <if | unless> <statement> run function
+set <name> <value>
+    -> Does not compile, stores internal value
+${<name>}
+    -> Place anywhere to retrieve the value stored from let
 
 # Statements:
 $<var> < = | < | > | <= | >= | matches > < $var | range >
