@@ -8,8 +8,9 @@ pub fn _print_lines(input: &Datapack) {
 
 pub fn print_warnings(pack: &Datapack) {
     if pack.warnings.len() > 0 {
-        status(format!("'{}' Generated {} Warnings: ", pack.settings.name, pack.warnings.len()));
-        let mut t = Datapack::new(vec![], "".to_string());
+        println!();
+        status(format!("'{}' Generated {} Warnings: ", pack.meta.name, pack.warnings.len()));
+        let mut t = Datapack::blank();
         for (i, e) in pack.warnings.iter().enumerate() {
             print_warning(format!("{}{}", e, if i == pack.warnings.len() - 1 { "\n" } else { "" }), &mut t);
         }
