@@ -1,10 +1,12 @@
 #[cfg(test)]
 mod tests {
+    use crate::Blocker;
     use super::*;
 
     #[test]
     fn find_block_1() {
-        let s = "{ this is \\)\\)\\)\\)\\)one {{}} fn} opp!sebf kjshb fkuehbs fkshebf lshebf les".to_string();
+        let s = "{ this is \\)\\)\\)\\)\\)one {{}} fn} opp!sebf kjshb fkuehbs fkshebf lshebf les"
+            .to_string();
 
         let mut b = Blocker::new();
         let o = b.find_size(&s, 0);
@@ -51,7 +53,17 @@ mod tests {
 
     #[test]
     fn find_block_vec_1() {
-        let s = vec!["[ {this is line one", "and (two)", "and ')\"\\''  {three", "number} four, ", " and } five", "not 6!"].iter().map(|s| String::from(*s)).collect::<Vec<String>>();
+        let s = vec![
+            "[ {this is line one",
+            "and (two)",
+            "and ')\"\\''  {three",
+            "number} four, ",
+            " and } five",
+            "not 6!",
+        ]
+        .iter()
+        .map(|s| String::from(*s))
+        .collect::<Vec<String>>();
 
         let mut b = Blocker::new();
         let o = b.find_size_vec(&s, 2);
