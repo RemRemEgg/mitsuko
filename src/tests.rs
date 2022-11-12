@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use crate::Blocker;
     use super::*;
+    use crate::Blocker;
 
     #[test]
     fn find_block_1() {

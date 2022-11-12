@@ -46,6 +46,8 @@ set <name> <value>
     -> Does not compile, stores internal value
 ${<name>}
     -> Place anywhere to retrieve the value stored from let
+return
+    -> Breaks from current execution
 
 # Statements:
 $<var> < = | < | > | <= | >= | matches > < $var | range >
