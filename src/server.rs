@@ -1,11 +1,5 @@
 use crate::*;
 
-pub fn _print_lines(input: &Datapack) {
-    for (i, e) in input.lines.iter().enumerate() {
-        println!("[{}] {}", i, e);
-    }
-}
-
 pub fn print_warnings(pack: &Datapack) {
     if pack.warnings.len() > 0 {
         println!();
@@ -45,14 +39,18 @@ pub fn _trim_white_space(input: Vec<String>) -> (Vec<String>, usize) {
     (out, c)
 }
 
-pub fn warn(message: String, pack: &mut Datapack) {
+pub fn warn(message: String, warnings: &mut Vec<String>) {
     println!("‼»   [Warning] {}", message);
-    pack.warnings.push(message);
+    warnings.push(message);
 }
 
 pub fn print_warning(message: String, pack: &mut Datapack) {
     println!("‼»   [{}] {}", pack.warnings.len(), message);
     pack.warnings.push(message);
+}
+
+pub fn format_out(message: &str, path: &str, ln: usize) -> String {
+    message.to_string() + &[" ./src/", path, ":", &*ln.to_string()].join("").replace("/", "\\")
 }
 
 pub fn error(message: String) -> ! {

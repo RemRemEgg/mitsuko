@@ -5,7 +5,7 @@ description (String: A Datapack)
     -> Description used in pack.mcmeta (supports §)
 name (String: Untitled)
     -> Datapack's name
-namespace (String: ex)
+x namespace (String: ex)
     -> Datapack's namespace
 remgine (bool: true)
     -> Is remgine enabled
@@ -48,6 +48,10 @@ ${<name>}
     -> Place anywhere to retrieve the value stored from let
 return
     -> Breaks from current execution
+loop < count | $var > {
+    **
+}
+    -> Repeats the given code <count> or <$var> times
 
 # Statements:
 $<var> < = | < | > | <= | >= | matches > < $var | range >

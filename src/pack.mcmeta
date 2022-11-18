@@ -1,6 +1,7 @@
 {
     "pack": {
         "pack_format": {VERS},
-        "description": "{DESC}\n§rMade with §3Mitsuko"
+        "description": "{DESC}",
+		"__comment": "Made with mitsuko <github.com/RemRemEgg/mitsuko>"
     }
 }
