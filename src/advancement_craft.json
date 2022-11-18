@@ -1,0 +1,11 @@
+{
+  "criteria": {
+    "get": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {
+        "recipe": "$PATH$"
+      }
+    }
+  },
+  "rewards": {"function": "$CALL$"}
+}

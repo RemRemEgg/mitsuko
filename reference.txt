@@ -22,23 +22,30 @@ recursive_replace (0..255: 3)
 
 
 # Code:
-// Comment
-    -> Parses to '# <comment>' if #[comments = true] and a space is placed after '//'
-<function>();
+//<comment>
+    -> Parses to '#<comment>' if #[comments = true]
+<function>()
     -> function <function>
+#<functions>()
 <command> [args...]
     -> <command> [args...]
 cmd <command> [args...]
     -> <command> [args...]
-if [!]<statement> : **
+if !(condition) : **
+if [!]<condition> : **
     -> execute <if | unless> <statement> run **
-$var = < num | math | $var | @nbt >
+^create <name> <type> [displayName]
+    -> scoreboard objectives add <name> <type> [displayName]
+^<selector>:<board>
+^temp -> ^$temp:remgine.temp
+^temp2 -> ^$temp2:remgine.temp
+^var = < num | math | ^var | @nbt >
     -> scoreboard players <operation | set> <var> [=] <other>
-score $<var> < + | - | / | * | < | > | <> | % > < num | $var >
+score ^<var> < + | - | / | * | < | > | <> | % > < num | $var >
     -> [set temp] + scoreboard players operation <var> <operation> <other | temp>
 exe < as | at | ast > @<selector> < ... | run > **
     -> execute <as | at> <selector> [at @s] ... run **
-ifs [!]<statement> {
+ifs [!]<condition> {
     **
 }
     -> function + execute <if | unless> <statement> run function
@@ -46,6 +53,7 @@ set <name> <value>
     -> Does not compile, stores internal value
 ${<name>}
     -> Place anywhere to retrieve the value stored from let
+$JSON{}
 return
     -> Breaks from current execution
 loop < count | $var > {
@@ -53,7 +61,7 @@ loop < count | $var > {
 }
     -> Repeats the given code <count> or <$var> times
 
-# Statements:
+# Conditions:
 $<var> < = | < | > | <= | >= | matches > < $var | range >
     -> score <var> <operation> <other | range>
 predicate <predicate>
@@ -70,3 +78,16 @@ csel player from id < num | $var >
 # Statements:
 random <num>
     -> if predicate rem:rnd/<num>
+
+$NEAR1
+$JSON
+${NS}
+${NAME}
+${INT_MAX}
+${INT_MIN}
+
+remgine.ignore = should be completely ignored by other datapack's commands
+remgine.no_target = should be completely ignored by other datapack's damaging/healing, weapons, items, effects, homing, etc
+
+todo:
+binary search tree

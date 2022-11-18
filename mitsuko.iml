@@ -9,6 +9,7 @@
       <excludeFolder url="file://$MODULE_DIR$/generated" />
       <excludeFolder url="file://$MODULE_DIR$/testing" />
       <excludeFolder url="file://$MODULE_DIR$/Example" />
+      <excludeFolder url="file://$MODULE_DIR$/Remgine" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

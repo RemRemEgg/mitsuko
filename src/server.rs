@@ -65,3 +65,10 @@ pub fn status(message: String) {
 pub fn debug(message: String) {
     println!("§»   {}", message);
 }
+
+#[macro_export]
+macro_rules! join {
+    ( $( $x:expr ),* ) => {
+            [$($x,)*""].join("")
+    };
+}

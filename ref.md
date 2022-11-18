@@ -21,21 +21,21 @@ Feel free to open a ticket with any ideas you have for features once I get an ac
 # Files, Folders, Meta
 ## Folder Structure
 ```jsonpath
-[root]
+<root>
 ├───generated
 │   └───** compiler generated **
 └───src
     ├───pack.msk
     └───<namespace>
         ├───»advancements
-        │   └───<folders>
-        ├───»event_links
-        │   └───<folders>
+        │   └───[folders]
+        ├───event_links
+        │   └───[link_name].msk
         ├───extras
-        │   └───<folders>
         └───functions
             ├───functions.msk
-            └───<sub-folders & .msk files>
+            ├───[file_name].msk
+            └───[sub-folders & .msk files]
 ```
 
 
@@ -53,7 +53,7 @@ description = §3Example pack for §bmitsuko
 ```
 ## Namespaces
 Namespaces are any combination of underscores, lowercase letters, and numbers. 
-Namespaces can be auto-filled in code with a `${NAMESPACE}` retrieval. This retrieval is locally overrideable. 
+Namespaces can be auto-filled in code with a `${NS}` retrieval. This retrieval is locally overrideable. 
 Attempting to use an invalid namespace will error out.
 
 Examples of valid namespaces:
