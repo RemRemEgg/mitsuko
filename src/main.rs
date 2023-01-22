@@ -1,4 +1,3 @@
-use regex::Regex;
 use server::*;
 use std::cmp::min;
 use std::fmt::{Display, Formatter};
@@ -10,20 +9,20 @@ use std::{env, fs, io};
 
 mod server;
 mod tests;
+mod build;
 
 static VERBOSE: i32 = 0;
-static CURRENT_PACK_VERSION: u8 = 10;
+static CURRENT_PACK_VERSION: u8 = 11;
 
 fn main() {
     status(env::args().collect::<Vec<String>>()[1..].join(" "));
     let mut args = env::args().collect::<Vec<String>>().into_iter();
-    let (mut pck, mut mov, mut clr, mut viewfn) = ("".to_string(), None, false, None);
+    let (mut pck, mut mov, mut clr) = ("".to_string(), None, false);
     while let Some(arg) = args.next() {
         match &*arg {
             "-pack" => pck = args.next().unwrap_or("".to_string()),
             "-move" => mov = args.next(),
             "-clear" => clr = true,
-            "-view" => viewfn = args.next(),
             _ => {}
         }
     }
@@ -55,10 +54,6 @@ fn main() {
     }
 
     data.warn_unknown_functions();
-
-    if viewfn.is_some() {
-        print_fn(&mut data, &viewfn.unwrap_or("*".to_string()));
-    }
 
     let name = &*data.meta.name.clone();
 
@@ -192,33 +187,6 @@ fn get_msk_files_split(fn_f: ReadDir) -> Vec<(String, Vec<String>)> {
     out
 }
 
-fn print_fn(pack: &mut Datapack, fn_name: &String) {
-    let rgx = Regex::new(&*fn_name).unwrap_or(Regex::new(":").unwrap());
-    let mut found = false;
-    for ns_test in &pack.namespaces {
-        for fn_test in &ns_test.functions {
-            if rgx.find(&fn_test.name).map_or(false, |m| m.start() == 0) || fn_name.eq("*") {
-                status(["Printing function '", &*fn_test.name, "'"].join(""));
-                found = true;
-                fn_test.commands.iter().for_each(|x| println!("{}", x));
-                println!();
-            }
-        }
-    }
-    if !found {
-        warn(
-            [
-                "Could not find any functions matching '",
-                &*fn_name,
-                "' to print",
-            ]
-                .join("")
-                .to_string(),
-            &mut pack.warnings,
-        );
-    }
-}
-
 fn process_function_file(ns: Namespace, name: String, lines: Vec<String>) -> Namespace {
     println!();
     status(["Processing function file '", &*name, "' from '", &*ns.id, "'"].join(""));
@@ -307,18 +275,46 @@ fn scan_pack_char(line: String, file: &mut Carrier<MCFunction>) -> usize {
 }
 
 fn test_tag(line: String, mut file: &mut Carrier<MCFunction>) {
-    if Regex::new("#\\[\\S+\\s*=\\s*[\\S _]+]")
-        .unwrap()
-        .is_match(&line)
-    {
-        let s = &line[2..(line.len() - 1)].split("=").collect::<Vec<_>>();
-        set_tag(s[0].trim(), s[1].trim(), &mut file);
+    let mut line = line.trim();
+    let (mut pre, mut post) = ("error", "null");
+    if {
+        if line.starts_with("#[") && line.ends_with("]") {
+            line = &line[2..line.len() - 1];
+            let p = line.split_once("=").unwrap_or((pre, post));
+            (pre, post) = (p.0.trim(), p.1.trim());
+            true
+        } else { false }
+    } {
+        set_tag(pre, post, &mut file);
     } else {
         error(format_out(
             &*["Malformed argument tag \'", &*line, "\'"].join(""),
             &*file.get_path(&file.ns),
             file.ln,
         ))
+    }
+}
+
+fn set_tag(tag: &str, val: &str, file: &mut Carrier<MCFunction>) {
+    let mut suc = true;
+    match tag {
+        "optimizations" => file.meta.opt_level = min(val.parse::<u8>().unwrap_or(0u8), 4u8),
+        "debug" => file.meta.vb = min(val.parse::<i32>().unwrap_or(0), 3),
+        "recursive_replace" => file.meta.recursive_replace = val.parse::<u8>().unwrap_or(3),
+        "comments" => file.meta.comments = val.to_uppercase().eq("TRUE"),
+        _ => {
+            if file.meta.vb >= 1 {
+                warn(format_out(
+                    &*["Unknown tag: \'", tag, "\' (value = \'", val, "\')"].join(""),
+                    &*file.get_path(&file.ns),
+                    file.ln,
+                ), &mut file.warnings);
+            }
+            suc = false
+        }
+    }
+    if suc && file.meta.vb >= 1 {
+        debug(format!("Set arg \'{}\' to \'{}\'", tag, val));
     }
 }
 
@@ -347,29 +343,6 @@ fn set_pack_meta(meta: &str, val: &str, mut pack: &mut Datapack) {
     }
     if suc && pack.meta.vb >= 1 {
         debug(format!("Set arg \'{}\' to \'{}\'", meta, val));
-    }
-}
-
-fn set_tag(tag: &str, val: &str, file: &mut Carrier<MCFunction>) {
-    let mut suc = true;
-    match tag {
-        "optimizations" => file.meta.opt_level = min(val.parse::<u8>().unwrap_or(0u8), 4u8),
-        "debug" => file.meta.vb = min(val.parse::<i32>().unwrap_or(0), 3),
-        "recursive_replace" => file.meta.recursive_replace = val.parse::<u8>().unwrap_or(3),
-        "comments" => file.meta.comments = val.to_uppercase().eq("TRUE"),
-        _ => {
-            if file.meta.vb >= 1 {
-                warn(format_out(
-                    &*["Unknown tag: \'", tag, "\' (value = \'", val, "\')"].join(""),
-                    &*file.get_path(&file.ns),
-                    file.ln,
-                ), &mut file.warnings);
-            }
-            suc = false
-        }
-    }
-    if suc && file.meta.vb >= 1 {
-        debug(format!("Set arg \'{}\' to \'{}\'", tag, val));
     }
 }
 
@@ -782,13 +755,13 @@ struct Namespace {
 
 impl Namespace {
     fn new(id: String, meta: Meta) -> Namespace {
-        let full = Regex::new(".+").unwrap().find(&*id);
-        let valid = Regex::new("[_a-z0-9]+").unwrap().find(&*id);
-        if valid.is_none() {
-            error(["Invalid namespace: ", &*id, ""].join("'"));
-        }
-        if valid != full {
-            error(["Invalid namespace: ", &*id, ""].join("'"));
+        if id.eq(&"".to_string()) || {
+            let mut nid = id.replace(|ch| ch >= 'a' && ch <= 'z', "");
+            nid = nid.replace(|ch| ch >= '0' && ch <= '9', "");
+            nid = nid.replace("_", "");
+            nid.len() != 0
+        } {
+            error(join!["Invalid Namespace: ", &*id]);
         }
         Namespace {
             id,
@@ -899,14 +872,15 @@ impl MCFunction {
     }
 
     pub fn is_valid_fn(function: &str) -> bool {
-        let find = Regex::new("([a-z_]+:)?([a-z0-9_][a-z0-9_/]*[a-z0-9_]|[a-z0-9_])\\(\\)")
-            .unwrap()
-            .find(function);
-        return if find.is_none() {
-            false
+        if function.ends_with("()") {
+            let mut nid = function[..function.len()-2].replace(|ch| ch >= 'a' && ch <= 'z', "");
+            nid = nid.replace(|ch| ch >= '0' && ch <= '9', "");
+            nid = nid.replace("_", "");
+            nid = nid.replace("/", "");
+            nid.len() == 0
         } else {
-            find.unwrap().start() == 0
-        };
+            false
+        }
     }
 
     fn extract_from(keys: Vec<&str>, file: &mut Carrier<MCFunction>) -> (usize, MCFunction) {
@@ -1380,7 +1354,7 @@ impl MCFunction {
         let mut v = selector.to_string();
         if selector.starts_with("@") {
             if selector.len() >= 4 && selector.chars().nth(2).unwrap_or(' ').eq(&'[') {
-                let b = selector[3..selector.len()-1].to_string();
+                let b = selector[3..selector.len() - 1].to_string();
                 let options = Blocker::new().split_in_same_level(",", &b);
                 if options.is_ok() {
                     let ops = options.unwrap().into_iter().map(|o| -> String {
@@ -1621,9 +1595,7 @@ impl MCFunction {
 
     fn parse_name(f: &str, ns: &str) -> Result<String, ()> {
         let fnn = f.to_string();
-        if fnn.starts_with("&") {
-
-        }
+        if fnn.starts_with("&") {}
         if MCFunction::is_valid_fn(&*fnn) {
             Ok(
                 [

@@ -2,9 +2,7 @@
 name = "mitsuko"
 version = "0.1.0"
 edition = "2021"
-
-[dependencies]
-regex = "1"
+build = "src/build.rs"
 
 [profile.dev]
 overflow-checks = false
