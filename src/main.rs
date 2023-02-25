@@ -16,6 +16,27 @@ static CURRENT_PACK_VERSION: u8 = 11;
 
 fn main() {
     status(env::args().collect::<Vec<String>>()[1..].join(" "));
+    let mut imports = vec![];
+    let ims = read_dir("imports");
+    if ims.is_ok() {
+        for im in ims.unwrap().map(|x| x.unwrap()) {
+            if !im.path().is_dir() && im.path().to_str().unwrap_or("").ends_with(".msk") {
+                let i = fs::read_to_string(im.path()).unwrap_or("".to_string());
+                let i = i.split(['\n', '\r']).collect::<Vec<&str>>();
+                let ins = im.file_name().to_string_lossy().to_string();
+                let ins = ins.split_once(".").unwrap_or(("minecraft","msk")).0;
+                for s in i.into_iter() {
+                    if s != "" {
+                        imports.push(join![ins, ":", s]);
+                    }
+                }
+            }
+        }
+    } else {
+        warn("No import folder found".to_string(), &mut vec![]);
+    }
+    status(join!["Found ", &*imports.len().to_string(), " external functions"]);
+    
     let mut args = env::args().collect::<Vec<String>>().into_iter();
     let (mut pck, mut mov, mut clr) = ("".to_string(), None, false);
     while let Some(arg) = args.next() {
@@ -37,6 +58,7 @@ fn main() {
         pack.unwrap(),
         &pck,
     );
+    data.callable_functions.append(&mut imports);
 
     let nss = read_dir([&*pck, "src"].join("/"));
     if nss.is_ok() {
@@ -122,6 +144,11 @@ fn compile_namespace(mut pack: Datapack, namespace: &String, src: &str) -> Datap
     }
 
     pack.warnings.append(&mut ns.warnings);
+    let mut k: Vec<String> = vec![];
+    for f in ns.functions.iter() {
+        k.push(join!(&*ns.id, ":", &*f.name));
+    }
+    pack.callable_functions.append(&mut k);
     pack.namespaces.push(ns);
     pack
 }
@@ -354,6 +381,7 @@ fn finalize_functions(mut ns: &mut Namespace, mut _pack: &Datapack) {
     let (mut ln_total, mut cm_total) = (0, 0);
     ns.functions.iter().for_each(|f| {
         ln_total += f.lines.len();
+        ns.export_functions.push(f.name.clone());
     });
     compile_functions(&mut ns);
     ns.functions.iter().for_each(|f| {
@@ -401,10 +429,13 @@ fn clean_functions(ns: &mut Namespace) {
     for fi in 0..ns.functions.len() {
         for i in 0..ns.functions[fi].commands.len() {
             let mut c = ns.functions[fi].commands[i].clone();
+            c = c.replace("positioned as @s ", "positioned as @s[] ");
+            c = c.replace("as @s ", "");
+            c = c.replace("@s[]", "@s");
             c = c.replace(" run execute", "");
             c = c.replace("execute run ", "");
-            c = c.replace(" run run", "");
-            c = c.replace("execute execute ", "");
+            c = c.replace(" run run", " run");
+            c = c.replace("execute execute ", "execute ");
             for _ in 0..ns.functions[fi].meta.recursive_replace {
                 for vi in 0..ns.functions[fi].vars.len() {
                     c = c.replace(
@@ -434,12 +465,16 @@ fn process_link_file(mut ns: Namespace, path: String, lines: Vec<String>) -> Nam
 
     let mut lks = Vec::new();
     for (ln, line) in lines.into_iter().enumerate() {
-        if line.eq("") { break; }
+        if line.eq("") { continue; }
         let line = line.trim().split(" : ").collect::<Vec<_>>();
         if line.len() < 2 {
             warn(format_out("Not enough arguments to link", &*[&*ns.id, "event_links", &*path].join("/"), ln + 1), &mut ns.warnings);
         } else {
-            let links = line[1].trim().replace(" ", "").split(",").map(|f| MCFunction::parse_name(&*[f, "()"].join(""), &*ns.id).unwrap_or("◙".to_string())).filter(|f| !f.eq("◙")).collect::<Vec<_>>();
+            let links = line[1].trim().replace(" ", "");
+            let links = links.split(",").filter(|l| !l.eq(&"none"));
+            let links = links.map(|f| MCFunction::parse_name(&*[f, "()"].join(""), &*ns.id).unwrap_or("◙".to_string()));
+            let links = links.filter(|f| !f.eq("◙"));
+            let links = links.collect::<Vec<_>>();
             lks.push(Link::new(path.clone(), line[0].clone().to_string(), links));
         }
     }
@@ -494,10 +529,12 @@ fn save_pack(mut pack: Datapack) -> Datapack {
     }
 
     remove_dir_all([&*pack.src, "generated"].join("/")).ok();
+    remove_dir_all([&*pack.src, "exports"].join("/")).ok();
     let root_path = [&*pack.src, "generated", &*pack.meta.name].join("/");
 
     remove_dir_all(&*root_path).ok();
     make_folder(&*root_path);
+    make_folder(&*join![&*pack.src, "/exports"]);
 
     let mut meta =
         File::create([&*root_path, "/pack.mcmeta"].join("")).expect("Could not make 'pack.mcmeta'");
@@ -591,6 +628,11 @@ fn save_pack(mut pack: Datapack) -> Datapack {
         if read_dir(&*[&*pack.src, "/src/", &*namespace.id, "/extras"].join("")).is_ok() {
             copy_dir_all(&*[&*pack.src, "/src/", &*namespace.id, "/extras"].join(""), &*ns_path).expect("Could not copy 'extras' folder");
         }
+
+        let mut file =
+            File::create(&*join![&*pack.src,"/exports/",&*namespace.id,".msk"]).expect(&*["Could not make export file '", &*namespace.id, "'"].join(""));
+        file.write_all(namespace.export_functions.join("\n").as_bytes())
+            .expect(&*["Could not write export file '", &*namespace.id, "'"].join(""));
     }
 
     let mut links: Vec<Link> = Vec::new();
@@ -600,27 +642,20 @@ fn save_pack(mut pack: Datapack) -> Datapack {
                 break 'lks;
             }
             let mut l = ns.links.remove(0);
-            let mut p = false;
             let mut p2 = false;
             l.links = l.links.iter().filter(|&ld| {
                 p2 = false;
-                ns.functions.iter().for_each(|f| {
-                    if [&*ns.id, &*f.name].join(":") == *ld {
-                        p = true;
-                        p2 = true;
-                    }
-                });
-                if !(ld.starts_with(&ns.id) && ld.chars().collect::<Vec<char>>()[*&ns.id.len()].eq(&':')) {
-                    warn(["External function may not exist '", &*ld, "' found for link '", &*l.path, "' ./src/", &*ns.id, "/event_links/", &*l.path].join(""), &mut pack.warnings);
-                    p2 = true;
-                }
+                let split = ld.split_once(":").unwrap_or((&*ns.id, &**ld));
+                let p3 = pack.callable_functions.contains(&join!(split.0, ":", split.1));
+                p2 = p2 || p3;
                 if !p2 {
                     warn(["No such function '", &*ld, "' found for link '", &*l.path, "' ./src/", &*ns.id, "/event_links/", &*l.path].join(""), &mut pack.warnings);
                 }
                 p2
             }).map(|s| s.clone()).collect();
+            let mut p = true;
             for l2 in links.iter_mut() {
-                if p && l.name == l2.name && l.path == l2.path {
+                if l.name == l2.name && l.path == l2.path {
                     l2.links.append(&mut l.links);
                     p = false;
                     break;
@@ -751,6 +786,7 @@ struct Namespace {
     meta: Meta,
     ln: usize,
     warnings: Vec<String>,
+    export_functions: Vec<String>,
 }
 
 impl Namespace {
@@ -771,6 +807,7 @@ impl Namespace {
             meta,
             ln: 0,
             warnings: vec![],
+            export_functions: vec![]
         }
     }
 }
@@ -781,6 +818,7 @@ pub struct Datapack {
     namespaces: Vec<Namespace>,
     warnings: Vec<String>,
     src: String,
+    callable_functions: Vec<String>,
 }
 
 impl Datapack {
@@ -806,15 +844,14 @@ impl Datapack {
             warnings: vec![],
             src: "".to_string(),
             namespaces: vec![],
+            callable_functions: vec![],
         }
     }
 
     fn warn_unknown_functions(&mut self) {
         let mut calls = Vec::new();
-        let mut functions = Vec::new();
         for ns in &self.namespaces {
             for fi in 0..ns.functions.len() {
-                functions.push(ns.id.to_string() + ":" + &*ns.functions[fi].name);
                 for call in &ns.functions[fi].calls {
                     let path = ns.functions[fi].get_path(&ns);
                     let mut name = call.0.to_string();
@@ -823,13 +860,20 @@ impl Datapack {
                 }
             }
         }
-        calls.retain(|c| !(functions.contains(&c.0.to_string()) || is_remgine_function(&c.0)));
+        calls.retain(|c| {
+            let split = c.0.split_once(":").unwrap_or(("internal_error", "ignore_me"));
+            !self.is_known_function(split.1, split.0)
+        });
         for c in calls {
             warn(format_out(
                 &*["Unknown or undefined function '", &*c.0.to_string(), "'"].join(""),
                 &*c.1.to_string(), c.2,
             ), &mut self.warnings);
         }
+    }
+
+    fn is_known_function(&self, function: &str, ns: &str) -> bool {
+        self.callable_functions.contains(&join![ns, ":", function])
     }
 }
 
@@ -872,11 +916,16 @@ impl MCFunction {
     }
 
     pub fn is_valid_fn(function: &str) -> bool {
+        let mut function = function;
+        if function.contains(":") {
+            function = function.split_once(":").unwrap_or(("", "")).1;
+        }
         if function.ends_with("()") {
-            let mut nid = function[..function.len()-2].replace(|ch| ch >= 'a' && ch <= 'z', "");
+            let mut nid = function[..function.len() - 2].replace(|ch| ch >= 'a' && ch <= 'z', "");
             nid = nid.replace(|ch| ch >= '0' && ch <= '9', "");
             nid = nid.replace("_", "");
             nid = nid.replace("/", "");
+            nid = nid.replace(".", "");
             nid.len() == 0
         } else {
             false
@@ -1017,8 +1066,8 @@ impl MCFunction {
             return (1, cmds, funs, warns);
         }
         let rem: usize = match keys[0] {
-            "@DEBUGGER" => {
-                println!("@DEBUGGER found: {} for {}", self.ln + ln + 1, &self.name);
+            "@DEBUG" => {
+                println!("@DEBUG found: {} for {}", self.ln + ln + 1, &self.name);
                 1
             }
             "@ERROR" => {
@@ -1061,7 +1110,7 @@ impl MCFunction {
                 1
             }
             "loop" => { //TODO rework with remgine + temp
-                //TODO ast + loop removes more than necessary
+                //TODO ast + loop removes more than necessary (also double ifs and other stuff)
                 let count = keys[1].parse::<usize>().unwrap_or(0);
                 if count != 0 {
                     *text = keys[2..].join(" ");
@@ -1088,13 +1137,6 @@ impl MCFunction {
             }
             "if" => {
                 let mut pre = String::from("execute ");
-                if keys.len() < 3 {
-                    error(format_out(
-                        "Invalid 'if' function",
-                        &*self.get_path(ns),
-                        self.ln + ln + 1,
-                    ));
-                }
                 let mode = if keys[1].starts_with('!') {
                     keys[1] = &keys[1][1..];
                     "unless "
@@ -1109,23 +1151,28 @@ impl MCFunction {
                     pre.push_str(&*cd);
                     pre.push_str(" ");
                 }
-                pre.push_str("run ");
+                if keys.len() >= 3 {
+                    pre.push_str("run ");
 
-                let (res, mut fun, (mut funs2, mut warn)) = self.code_to_function(ns, ln, "if");
-                self.calls.append(&mut fun.calls);
-                funs.append(&mut funs2);
-                warns.append(&mut warn);
-                if fun.commands.len() > 1 {
-                    cmds.push(join![&*pre, &*fun.get_callable(ns)]);
-                    funs.push(fun);
-                } else {
-                    if fun.commands.len() == 0 {
-                        cmds.push(join!["# ", &*pre.clone(), "<code produced no result>"]);
+                    let (res, mut fun, (mut funs2, mut warn)) = self.code_to_function(ns, ln, "if");
+                    self.calls.append(&mut fun.calls);
+                    funs.append(&mut funs2);
+                    warns.append(&mut warn);
+                    if fun.commands.len() > 1 {
+                        cmds.push(join![&*pre, &*fun.get_callable(ns)]);
+                        funs.push(fun);
                     } else {
-                        cmds.push(pre.clone() + &*fun.get_callable(ns));
+                        if fun.commands.len() == 0 {
+                            cmds.push(join!["# ", &*pre.clone(), "<code produced no result>"]);
+                        } else {
+                            cmds.push(pre.clone() + &*fun.get_callable(ns));
+                        }
                     }
+                    res
+                } else {
+                    cmds.push(pre);
+                    1
                 }
-                res
             }
             "for" => {
                 if keys.len() < 3 || !keys[2].eq("{") {
