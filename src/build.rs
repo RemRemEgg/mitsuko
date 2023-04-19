@@ -1,11 +1,10 @@
-#[allow(dead_code)]
-// i hate build.rs i hate build.rs i hate build.rs i hate build.rs i hate build.rs i hate build.rs
 use std::{
     env, fs,
     path::{Path, PathBuf},
 };
-//copium
-#[allow(dead_code)]
+
+const COPY_DIR: &'static str = "imports";
+
 fn copy_dir<P, Q>(from: P, to: Q)
     where
         P: AsRef<Path>,
@@ -28,14 +27,13 @@ fn copy_dir<P, Q>(from: P, to: Q)
         } else {}
     }
 }
-//copium
-#[allow(dead_code)]
+
 fn main() {
     let out = env::var("PROFILE").unwrap();
-    let out = PathBuf::from(format!("target/{}/{}", out, "imports"));
+    let out = PathBuf::from(format!("target/{}/{}", out, COPY_DIR));
     if out.exists() {
         fs::remove_dir_all(&out).unwrap();
     }
     fs::create_dir(&out).unwrap();
-    copy_dir("imports", &out);
+    copy_dir(COPY_DIR, &out);
 }
