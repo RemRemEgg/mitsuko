@@ -1,3 +1,5 @@
+// code go brrrrrrrrrr
+
 use server::*;
 use std::cmp::min;
 use std::fmt::{Display, Formatter};
@@ -12,10 +14,10 @@ mod tests;
 mod build;
 
 static VERBOSE: i32 = 0;
-static CURRENT_PACK_VERSION: u8 = 11;
+static CURRENT_PACK_VERSION: u8 = 12;
 
 fn main() {
-    status(env::args().collect::<Vec<String>>()[1..].join(" "));
+    status_color(env::args().collect::<Vec<String>>()[1..].join(" "), str::GRY);
     let mut imports = vec![];
     let ims = read_dir("imports");
     if ims.is_ok() {
@@ -47,11 +49,11 @@ fn main() {
             _ => {}
         }
     }
-    status(["Compiling '", &*pck, "'"].join(""));
+    status(["Compiling '", &*pck.form_foreground(str::PNK), "'"].join(""));
 
     let pack = fs::read_to_string([&*pck, "src/pack.msk"].join("/"));
     if pack.is_err() {
-        error("Could not find 'pack.msk'".to_string());
+        error(join!("Could not find '",&*"pack.msk".form_foreground(str::ORN),"'"));
     }
 
     let mut data = Datapack::new(
@@ -92,22 +94,22 @@ fn main() {
             let t = remove_dir_all(&world);
             if t.is_err() {
                 warn(
-                    "Could not clear pre-existing datapack".to_string(),
+                    "Could not clear pre-existing datapack".form_foreground(str::RED),
                     &mut Vec::new(),
                 );
             }
         }
         println!(
             "Copying {} to {}",
-            result_path.to_str().unwrap_or("error"),
-            &*world
+            result_path.to_str().unwrap_or("error").form_underline(),
+            &*world.form_underline()
         );
-        copy_dir_all(result_path, world).expect("Failed to copy datapack");
+        copy_dir_all(result_path, world).expect(&*"Failed to copy datapack".form_foreground(str::RED));
     }
 
     print_warnings(&data);
 
-    status("Done".to_string());
+    status_color("Done".form_bold(), str::GRN);
 }
 
 fn compile_namespace(mut pack: Datapack, namespace: &String, src: &str) -> Datapack {
@@ -122,7 +124,7 @@ fn compile_namespace(mut pack: Datapack, namespace: &String, src: &str) -> Datap
         }
         finalize_functions(&mut ns, &pack);
     } else {
-        warn(["No 'functions' folder found for '", &*namespace, "'"].join(""), &mut pack.warnings);
+        warn(["No '", &*"functions".form_foreground(str::BLU),"' folder found for '", &*namespace.form_foreground(str::PNK), "'"].join(""), &mut pack.warnings);
     }
 
     let el_fr = read_dir([&src, "event_links"].join("/"));
@@ -216,7 +218,7 @@ fn get_msk_files_split(fn_f: ReadDir) -> Vec<(String, Vec<String>)> {
 
 fn process_function_file(ns: Namespace, name: String, lines: Vec<String>) -> Namespace {
     println!();
-    status(["Processing function file '", &*name, "' from '", &*ns.id, "'"].join(""));
+    status(["Processing function file '", &*name.form_foreground(str::BLU), "' from '", &*ns.id.form_foreground(str::PNK), "'"].join(""));
     let t_scan = Instant::now();
     let (mut ns, mut fns, mut warnings) = scan_for_functions(ns, &*name, lines);
     status(format!(
@@ -266,7 +268,7 @@ fn scan_pack_line(line: String, file: &mut Carrier<MCFunction>) -> usize {
                 file.add_item(result.1);
             } else {
                 error(format_out(
-                    &*["Invalid function name \'", key_2, "\'"].join(""),
+                    &*["Invalid function name \'", &*key_2.form_foreground(str::BLU), "\'"].join(""),
                     &*file.get_path(&file.ns),
                     file.ln,
                 ));
@@ -315,7 +317,7 @@ fn test_tag(line: String, mut file: &mut Carrier<MCFunction>) {
         set_tag(pre, post, &mut file);
     } else {
         error(format_out(
-            &*["Malformed argument tag \'", &*line, "\'"].join(""),
+            &*["Malformed argument tag \'", &*line.form_foreground(str::BLU), "\'"].join(""),
             &*file.get_path(&file.ns),
             file.ln,
         ))
@@ -332,7 +334,7 @@ fn set_tag(tag: &str, val: &str, file: &mut Carrier<MCFunction>) {
         _ => {
             if file.meta.vb >= 1 {
                 warn(format_out(
-                    &*["Unknown tag: \'", tag, "\' (value = \'", val, "\')"].join(""),
+                    &*["Unknown tag: \'", &*tag.form_foreground(str::BLU), "\' (value = \'", &*val.form_foreground(str::GRY), "\')"].join(""),
                     &*file.get_path(&file.ns),
                     file.ln,
                 ), &mut file.warnings);
@@ -341,7 +343,7 @@ fn set_tag(tag: &str, val: &str, file: &mut Carrier<MCFunction>) {
         }
     }
     if suc && file.meta.vb >= 1 {
-        debug(format!("Set arg \'{}\' to \'{}\'", tag, val));
+        debug(format!("Set arg \'{}\' to \'{}\'", tag.form_foreground(str::BLU), val.form_foreground(str::AQU)));
     }
 }
 
@@ -359,7 +361,7 @@ fn set_pack_meta(meta: &str, val: &str, mut pack: &mut Datapack) {
         _ => {
             warn(
                 format_out(
-                    &*["Unknown pack tag: \'", meta, "\' (value = \'", val, "\')"].join(""),
+                    &*["Unknown pack tag: \'", &*meta.form_foreground(str::BLU), "\' (value = \'", &*val.form_foreground(str::GRY), "\')"].join(""),
                     "pack",
                     pack.ln,
                 ),
@@ -369,7 +371,7 @@ fn set_pack_meta(meta: &str, val: &str, mut pack: &mut Datapack) {
         }
     }
     if suc && pack.meta.vb >= 1 {
-        debug(format!("Set arg \'{}\' to \'{}\'", meta, val));
+        debug(format!("Set arg \'{}\' to \'{}\'", meta.form_foreground(str::BLU), val.form_foreground(str::AQU)));
     }
 }
 
@@ -397,9 +399,8 @@ fn finalize_functions(mut ns: &mut Namespace, mut _pack: &Datapack) {
     /* CLEAN */
     let t_clean = Instant::now();
     clean_functions(&mut ns);
-    status(format!(
-        "Cleaned up in {} µs\n",
-        t_clean.elapsed().as_micros()
+    status(join!(
+        &*"Cleaned up".form_foreground(str::GRN), " in ", &*t_clean.elapsed().as_micros().to_string(), " µs\n"
     ));
 
     status(format!(
@@ -416,7 +417,7 @@ fn compile_functions(mut ns: &mut Namespace) -> &Namespace {
             break 'functions ns;
         }
         if ns.meta.vb >= 1 {
-            debug(format!("Compiling Function '{}'", ns.functions[ns.ln].name));
+            debug(format!("Compiling Function '{}'", ns.functions[ns.ln].name.form_foreground(str::AQU)));
         }
         let mut f = ns.functions.remove(ns.ln);
         f.compile(&mut ns);
@@ -439,7 +440,7 @@ fn clean_functions(ns: &mut Namespace) {
             for _ in 0..ns.functions[fi].meta.recursive_replace {
                 for vi in 0..ns.functions[fi].vars.len() {
                     c = c.replace(
-                        &["${", &ns.functions[fi].vars[vi].0, "}"].join(""),
+                        &["*{", &ns.functions[fi].vars[vi].0, "}"].join(""),
                         &ns.functions[fi].vars[vi].1,
                     );
                 }
@@ -449,18 +450,9 @@ fn clean_functions(ns: &mut Namespace) {
     }
 }
 
-fn is_remgine_function(name: &String) -> bool {
-    if name.starts_with("remgine:") {
-        //TODO make this a file that gets imported
-        return vec!["utils/rotate_all_log", "utils/rmm", "utils/rotate_y", "utils/csel_pid", "utils/raycast_to_non_air_fine", "utils/test_nbt_equal"]
-            .contains(&name.split_once(":").unwrap_or(("", "")).1);
-    }
-    false
-}
-
 fn process_link_file(mut ns: Namespace, path: String, lines: Vec<String>) -> Namespace {
     println!();
-    status(["Processing link file '", &*ns.id, "/event_links/", &*path, "'"].join(""));
+    status(["Processing link file '", &*join!(&*ns.id, "/event_links/", &*path).form_foreground(str::BLU), "'"].join(""));
     let t_scan = Instant::now();
 
     let mut lks = Vec::new();
@@ -491,7 +483,7 @@ fn process_link_file(mut ns: Namespace, path: String, lines: Vec<String>) -> Nam
 
 fn process_item_file(mut ns: Namespace, path: String, lines: Vec<String>) -> Namespace {
     println!();
-    status(["Processing item file '", &*ns.id, "/items/", &*path, "'"].join(""));
+    status(["Processing item file '", &*join!(&*ns.id, "/items/", &*path).form_foreground(str::BLU), "'"].join(""));
     let t_scan = Instant::now();
 
     let mut item = Item::new(path, lines, &ns);
@@ -513,11 +505,11 @@ fn save_pack(mut pack: Datapack) -> Datapack {
     if pack.meta.vb >= 1 {
         status(format!(
             "Saving '{}' @ '{}'",
-            &pack.meta.name,
+            &pack.meta.name.form_foreground(str::PNK),
             match env::current_dir() {
                 Ok(mut path) => {
                     path.push(&*pack.meta.name);
-                    path.to_str().unwrap_or("").to_string()
+                    path.to_str().unwrap_or("").form_underline()
                 }
                 Err(err) => {
                     err.to_string()
@@ -525,7 +517,7 @@ fn save_pack(mut pack: Datapack) -> Datapack {
             }
         ));
     } else {
-        status(format!("Saving '{}'", &pack.meta.name));
+        status(format!("Saving '{}'", &pack.meta.name.form_foreground(str::PNK)));
     }
 
     remove_dir_all([&*pack.src, "generated"].join("/")).ok();
@@ -537,12 +529,12 @@ fn save_pack(mut pack: Datapack) -> Datapack {
     make_folder(&*join![&*pack.src, "/exports"]);
 
     let mut meta =
-        File::create([&*root_path, "/pack.mcmeta"].join("")).expect("Could not make 'pack.mcmeta'");
+        File::create([&*root_path, "/pack.mcmeta"].join("")).expect("Could not make '\x1b[93mpack.mcmeta\x1b[m'");
     let meta_template = include_str!("pack.mcmeta")
         .replace("{VERS}", &*pack.meta.version.to_string())
         .replace("{DESC}", &pack.meta.description);
     meta.write_all(meta_template.as_bytes())
-        .expect("Could not make 'pack.mcmeta'");
+        .expect("Could not make '\x1b[93mpack.mcmeta\x1b[m'");
     let tag_template = include_str!("tag.json");
     let recipe_template = include_str!("recipe.json");
     let adv_craft_template = include_str!("advancement_craft.json");
@@ -570,7 +562,7 @@ fn save_pack(mut pack: Datapack) -> Datapack {
             }
             let mut write_recipe = recipe_template.to_string();
             let mut file =
-                File::create(path).expect(&*["Could not make item recipe '", path, "'"].join(""));
+                File::create(path).expect(&*["Could not make item recipe '", &*path.form_foreground(str::BLU), "'"].join(""));
             write_recipe = write_recipe.replace("$PATTERN$", &*item.recipe.join(",\n    "));
 
             let mut mats = vec![];
@@ -584,7 +576,7 @@ fn save_pack(mut pack: Datapack) -> Datapack {
             write_recipe = write_recipe.replace("$MATERIALS$", &*mats.join(",\n    "));
 
             file.write_all(write_recipe.as_bytes())
-                .expect(&*["Could not write item recipe file '", path, "'"].join(""));
+                .expect(&*["Could not write item recipe file '", &*path.form_foreground(str::BLU), "'"].join(""));
 
             let path = &*[av_path, "/", &*item.path, ".json"].join("");
             if item.path.contains("/") {
@@ -596,11 +588,11 @@ fn save_pack(mut pack: Datapack) -> Datapack {
             }
             let mut write_adv = adv_craft_template.to_string();
             let mut file =
-                File::create(path).expect(&*["Could not make item advancement '", path, "'"].join(""));
+                File::create(path).expect(&*["Could not make item advancement '", &*path.form_foreground(str::BLU), "'"].join(""));
             write_adv = write_adv.replace("$PATH$", &*join![&*namespace.id, ":", &*item.path]);
             write_adv = write_adv.replace("$CALL$", &*join![&*namespace.id, ":", &*item.path]);
             file.write_all(write_adv.as_bytes())
-                .expect(&*["Could not write item advancement file '", path, "'"].join(""));
+                .expect(&*["Could not write item advancement file '", &*path.form_foreground(str::BLU), "'"].join(""));
         }
 
         let fn_path = &*[ns_path, "/functions"].join("");
@@ -620,9 +612,9 @@ fn save_pack(mut pack: Datapack) -> Datapack {
                 make_folder(&*path.join("/"));
             }
             let mut file =
-                File::create(path).expect(&*["Could not make function '", path, "'"].join(""));
+                File::create(path).expect(&*["Could not make function '", &*path.form_foreground(str::BLU), "'"].join(""));
             file.write_all(function.commands.join("\n").as_bytes())
-                .expect(&*["Could not write function '", path, "'"].join(""));
+                .expect(&*["Could not write function '", &*path.form_foreground(str::BLU), "'"].join(""));
         }
 
         if read_dir(&*[&*pack.src, "/src/", &*namespace.id, "/extras"].join("")).is_ok() {
@@ -630,9 +622,9 @@ fn save_pack(mut pack: Datapack) -> Datapack {
         }
 
         let mut file =
-            File::create(&*join![&*pack.src,"/exports/",&*namespace.id,".msk"]).expect(&*["Could not make export file '", &*namespace.id, "'"].join(""));
+            File::create(&*join![&*pack.src,"/exports/",&*namespace.id,".msk"]).expect(&*["Could not make export file '", &*namespace.id.form_foreground(str::PNK), "'"].join(""));
         file.write_all(namespace.export_functions.join("\n").as_bytes())
-            .expect(&*["Could not write export file '", &*namespace.id, "'"].join(""));
+            .expect(&*["Could not write export file '", &*namespace.id.form_foreground(str::PNK), "'"].join(""));
     }
 
     let mut links: Vec<Link> = Vec::new();
@@ -649,7 +641,7 @@ fn save_pack(mut pack: Datapack) -> Datapack {
                 let p3 = pack.callable_functions.contains(&join!(split.0, ":", split.1));
                 p2 = p2 || p3;
                 if !p2 {
-                    warn(["No such function '", &*ld, "' found for link '", &*l.path, "' ./src/", &*ns.id, "/event_links/", &*l.path].join(""), &mut pack.warnings);
+                    warn(["No such function '", &*ld.form_foreground(str::ORN), "' found for link '", &*l.path.form_foreground(str::BLU), "' ./src/", &*ns.id, "/event_links/", &*l.path].join(""), &mut pack.warnings);
                 }
                 p2
             }).map(|s| s.clone()).collect();
@@ -679,12 +671,12 @@ fn save_pack(mut pack: Datapack) -> Datapack {
             make_folder(&*path.join("/"));
         }
         let mut file =
-            File::create(path).expect(&*["Could not make link file '", path, "'"].join(""));
+            File::create(path).expect(&*["Could not make link file '", &*path.form_foreground(str::BLU), "'"].join(""));
         let len = link.links.len();
         let w = link.links.iter().enumerate().map(|(pos, lk)| ["\"", &**lk, "\"", if pos + 1 >= len { "" } else { "," }].join("")).collect::<Vec<_>>();
         let write = tag_template.clone().replace("$VALUES$", &*w.join("\n    "));
         file.write_all(write.as_bytes())
-            .expect(&*["Could not write link file '", path, "'"].join(""));
+            .expect(&*["Could not write link file '", &*path.form_foreground(str::BLU), "'"].join(""));
     }
 
     status(format!(
@@ -866,7 +858,7 @@ impl Datapack {
         });
         for c in calls {
             warn(format_out(
-                &*["Unknown or undefined function '", &*c.0.to_string(), "'"].join(""),
+                &*["Unknown or undefined function '", &*c.0.form_foreground(str::ORN), "'"].join(""),
                 &*c.1.to_string(), c.2,
             ), &mut self.warnings);
         }
@@ -948,7 +940,7 @@ impl MCFunction {
                 .any(|fun| -> bool { fun.name.eq(&mcf.name) })
             {
                 error(format_out(
-                    &*["Duplicate function name \'", &*mcf.name, "\'"].join(""),
+                    &*["Duplicate function name \'", &*mcf.name.form_foreground(str::BLU), "\'"].join(""),
                     &*mcf.get_path(&file.ns),
                     file.ln,
                 ));
@@ -958,7 +950,7 @@ impl MCFunction {
             if file.meta.vb >= 1 {
                 debug(format!(
                     "Found function \'{}\' ./src/{}",
-                    mcf.name,
+                    mcf.name.form_foreground(str::BLU),
                     file.get_path(&file.ns)
                 ).replace("/", "\\"));
                 if file.meta.vb >= 2 {
@@ -1045,13 +1037,13 @@ impl MCFunction {
         let path = &*self.get_path(ns);
         let text: &mut String = &mut self.lines[ln];
         for i in self.vars.iter() {
-            *text = text.replace(&*["${", &*i.0, "}"].join(""), &*i.1);
+            *text = text.replace(&*["*{", &*i.0, "}"].join(""), &*i.1);
         }
-        *text = text.replace("${NS}", &*ns.id);
-        *text = text.replace("${NAME}", &*ns.meta.name);
-        *text = text.replace("${INT_MAX}", "2147483647");
-        *text = text.replace("${INT_MIN}", "-2147483648");
-        *text = text.replace("$NEAR1", "limit=1,sort=nearest");
+        *text = text.replace("*{NS}", &*ns.id)
+                    .replace("*{NAME}", &*ns.meta.name)
+                    .replace("*{INT_MAX}", "2147483647")
+                    .replace("*{INT_MIN}", "-2147483648")
+                    .replace("*NEAR1", "limit=1,sort=nearest");
         MCFunction::parse_json_all(text);
         let mut cmds = vec![];
         let mut funs = vec![];
@@ -1067,7 +1059,7 @@ impl MCFunction {
         }
         let rem: usize = match keys[0] {
             "@DEBUG" => {
-                println!("@DEBUG found: {} for {}", self.ln + ln + 1, &self.name);
+                println!("\x1b[96m@DEBUG found: {} for {}\x1b[0m", self.ln + ln + 1, &self.name);
                 1
             }
             "@ERROR" => {
@@ -1076,6 +1068,10 @@ impl MCFunction {
                     &*self.get_path(ns),
                     self.ln + ln + 1,
                 ));
+            }
+            "@NOLEX" => {
+                *text = text[7..].into();
+                return self.compile_text(ns, ln);
             }
             "{" => {
                 let (res, mut fun, (mut funs2, mut warn)) = self.code_to_function(ns, ln, "bl");
@@ -1423,7 +1419,7 @@ impl MCFunction {
     fn remgine<T>(&self, ability: &str, ns: &Namespace, ln: usize, t: T) -> T {
         if !ns.meta.remgine {
             error(format_out(
-                &*["Remgine is required to use '", ability, "', enable it in pack.msk (remgine = true)"].join(""),
+                &*["Remgine is required to use '", &*ability.form_foreground(str::ORN), "', enable it in pack.msk (remgine = true)"].join(""),
                 &*self.get_path(ns),
                 self.ln + ln + 1,
             ));
@@ -1500,7 +1496,7 @@ impl MCFunction {
                 }
                 _ => {
                     error(format_out(
-                        &*join!("Failed to parse score function, unknown operation '", &*keys[1], "'"),
+                        &*join!("Failed to parse score function, unknown operation '", &*keys[1].form_foreground(str::BLU), "'"),
                         &*self.get_path(ns),
                         self.ln + ln + 1,
                     ));
@@ -1533,7 +1529,7 @@ impl MCFunction {
                 }
                 _ => {
                     error(format_out(
-                        &*join!("Failed to parse score function, unknown operation '", &*keys[1], "'"),
+                        &*join!("Failed to parse score function, unknown operation '", &*keys[1].form_foreground(str::BLU), "'"),
                         &*self.get_path(ns),
                         self.ln + ln + 1,
                     ));
@@ -1564,7 +1560,7 @@ impl MCFunction {
                     let comp = self.compile_score_path(&args[0], ns, ln);
                     if args.len() < 3 {
                         error(format_out(
-                            &*join!("Failed to parse score-based condition '", &*condition, "', not enough arguments"),
+                            &*join!("Failed to parse score-based condition '", &*condition.form_foreground(str::BLU), "', not enough arguments"),
                             &*self.get_path(ns),
                             self.ln + ln + 1,
                         ));
@@ -1577,7 +1573,7 @@ impl MCFunction {
                             "<" | "<=" | "=" | ">=" | ">" => {
                                 join![" ", &*args[1], &*self.compile_score_path(&args[2], ns, ln)]
                             }
-                            _ => error(format_out(&*join!("Failed to parse score-based condition '", &*condition, "', unknown operator"), &*self.get_path(ns), self.ln + ln + 1,))}]
+                            _ => error(format_out(&*join!("Failed to parse score-based condition '", &*condition.form_foreground(str::BLU), "', unknown operator"), &*self.get_path(ns), self.ln + ln + 1,))}]
                     })()]
                 }
                 _ => {
@@ -1596,7 +1592,7 @@ impl MCFunction {
             return (self.compile_score_path(num, ns, ln), true);
         }
         error(format_out(
-            &*join!("Failed to parse numerical '", &*num, "' ", &*int.err().unwrap().to_string()),
+            &*join!("Failed to parse numerical '", &*num.form_foreground(str::BLU), "' ", &*int.err().unwrap().to_string()),
             &*self.get_path(ns),
             self.ln + ln + 1,
         ));
@@ -1614,14 +1610,14 @@ impl MCFunction {
         }
         let mut pp = Blocker::new().split_in_same_level(":", &path).unwrap_or_else(|_| {
             error(format_out(
-                &*join!("Failed to parse score path '", &*path, "', unclosed brackets"),
+                &*join!("Failed to parse score path '", &*path.form_foreground(str::BLU), "', unclosed brackets"),
                 &*self.get_path(ns),
                 self.ln + ln + 1,
             ));
         });
         if pp.len() < 2 {
             error(format_out(
-                &*join!("Failed to parse score path '", &*path, "', expected board identifier"),
+                &*join!("Failed to parse score path '", &*path.form_foreground(str::BLU), "', expected board identifier"),
                 &*self.get_path(ns),
                 self.ln + ln + 1,
             ));
@@ -1753,8 +1749,6 @@ impl Blocker {
                 if o.0 != Blocker::NOT_FOUND {
                     return o;
                 } else {
-                    println!("STACK: {:?}", b.stack);
-                    println!("LINES: {:?}", lines);
                     error(format_out("Unterminated block", &*path, ln))
                 }
             }
@@ -1810,7 +1804,7 @@ impl Blocker {
                     if self.stack.last().eq(&Some(&'{')) {
                         self.stack.pop();
                     } else {
-                        return Err(format!("Unexpected \'{}\' @{}", c, pos));
+                        return Err(format!("Unexpected \'{}\' @{}", c.form_foreground(str::ORN), pos));
                     }
                 }
                 '(' if !self.string => self.stack.push(c),
@@ -1818,7 +1812,7 @@ impl Blocker {
                     if self.stack.last().eq(&Some(&'(')) {
                         self.stack.pop();
                     } else {
-                        return Err(format!("Unexpected \'{}\' @{}", c, pos));
+                        return Err(format!("Unexpected \'{}\' @{}", c.form_foreground(str::ORN), pos));
                     }
                 }
                 '[' if !self.string => self.stack.push(c),
@@ -1826,7 +1820,7 @@ impl Blocker {
                     if self.stack.last().eq(&Some(&'[')) {
                         self.stack.pop();
                     } else {
-                        return Err(format!("Unexpected \'{}\' @{}", c, pos));
+                        return Err(format!("Unexpected \'{}\' @{}", c.form_foreground(str::ORN), pos));
                     }
                 }
                 '\'' => {
