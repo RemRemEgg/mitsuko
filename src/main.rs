@@ -14,7 +14,7 @@ mod tests;
 mod build;
 
 static VERBOSE: i32 = 0;
-static CURRENT_PACK_VERSION: u8 = 12;
+static CURRENT_PACK_VERSION: u8 = 13;
 
 fn main() {
     status_color(env::args().collect::<Vec<String>>()[1..].join(" "), str::GRY);
@@ -26,7 +26,7 @@ fn main() {
                 let i = fs::read_to_string(im.path()).unwrap_or("".to_string());
                 let i = i.split(['\n', '\r']).collect::<Vec<&str>>();
                 let ins = im.file_name().to_string_lossy().to_string();
-                let ins = ins.split_once(".").unwrap_or(("minecraft","msk")).0;
+                let ins = ins.split_once(".").unwrap_or(("minecraft", "msk")).0;
                 for s in i.into_iter() {
                     if s != "" {
                         imports.push(join![ins, ":", s]);
@@ -38,7 +38,7 @@ fn main() {
         warn("No import folder found".to_string(), &mut vec![]);
     }
     status(join!["Found ", &*imports.len().to_string(), " external functions"]);
-    
+
     let mut args = env::args().collect::<Vec<String>>().into_iter();
     let (mut pck, mut mov, mut clr) = ("".to_string(), None, false);
     while let Some(arg) = args.next() {
@@ -94,7 +94,7 @@ fn main() {
             let t = remove_dir_all(&world);
             if t.is_err() {
                 warn(
-                    "Could not clear pre-existing datapack".form_foreground(str::RED),
+                    join!["Could not clear pre-existing datapack (", &*t.unwrap_err().to_string(), ")"].form_foreground(str::RED),
                     &mut Vec::new(),
                 );
             }
@@ -124,7 +124,7 @@ fn compile_namespace(mut pack: Datapack, namespace: &String, src: &str) -> Datap
         }
         finalize_functions(&mut ns, &pack);
     } else {
-        warn(["No '", &*"functions".form_foreground(str::BLU),"' folder found for '", &*namespace.form_foreground(str::PNK), "'"].join(""), &mut pack.warnings);
+        warn(["No '", &*"functions".form_foreground(str::BLU), "' folder found for '", &*namespace.form_foreground(str::PNK), "'"].join(""), &mut pack.warnings);
     }
 
     let el_fr = read_dir([&src, "event_links"].join("/"));
@@ -429,23 +429,9 @@ fn compile_functions(mut ns: &mut Namespace) -> &Namespace {
 fn clean_functions(ns: &mut Namespace) {
     for fi in 0..ns.functions.len() {
         for i in 0..ns.functions[fi].commands.len() {
-            let mut c = ns.functions[fi].commands[i].clone();
-            c = c.replace("positioned as @s ", "positioned as @s[] ");
-            c = c.replace("as @s ", "");
-            c = c.replace("@s[]", "@s");
-            c = c.replace(" run execute", "");
-            c = c.replace("execute run ", "");
-            c = c.replace(" run run", " run");
-            c = c.replace("execute execute ", "execute ");
-            for _ in 0..ns.functions[fi].meta.recursive_replace {
-                for vi in 0..ns.functions[fi].vars.len() {
-                    c = c.replace(
-                        &["*{", &ns.functions[fi].vars[vi].0, "}"].join(""),
-                        &ns.functions[fi].vars[vi].1,
-                    );
-                }
-            }
-            ns.functions[fi].commands[i] = c;
+            // let mut c = ns.functions[fi].commands[i].clone();
+            // optimize code!
+            // ns.functions[fi].commands[i] = c;
         }
     }
 }
@@ -537,7 +523,8 @@ fn save_pack(mut pack: Datapack) -> Datapack {
         .expect("Could not make '\x1b[93mpack.mcmeta\x1b[m'");
     let tag_template = include_str!("tag.json");
     let recipe_template = include_str!("recipe.json");
-    let adv_craft_template = include_str!("advancement_craft.json");
+    let adv_craft_template_119 = include_str!("advancement_craft_1.19.json");
+    let adv_craft_template_120 = include_str!("advancement_craft_1.20.json");
     let mat_template = r#""$ID$": {"item": "minecraft:$TYPE$"}"#.to_string();
     let mat_tag_template = r#""$ID$": {"tag": "minecraft:$TYPE$"}"#.to_string();
     for namespace in pack.namespaces.iter_mut() {
@@ -586,7 +573,7 @@ fn save_pack(mut pack: Datapack) -> Datapack {
                 path.insert(0, &*av_path);
                 make_folder(&*path.join("/"));
             }
-            let mut write_adv = adv_craft_template.to_string();
+            let mut write_adv = if pack.meta.version >= 14 {adv_craft_template_120} else {adv_craft_template_119}.to_string();
             let mut file =
                 File::create(path).expect(&*["Could not make item advancement '", &*path.form_foreground(str::BLU), "'"].join(""));
             write_adv = write_adv.replace("$PATH$", &*join![&*namespace.id, ":", &*item.path]);
@@ -799,7 +786,7 @@ impl Namespace {
             meta,
             ln: 0,
             warnings: vec![],
-            export_functions: vec![]
+            export_functions: vec![],
         }
     }
 }
@@ -890,6 +877,7 @@ pub struct MCFunction {
     meta: Meta,
     file: String,
     compiled: bool,
+    premc: usize,
 }
 
 impl MCFunction {
@@ -904,6 +892,7 @@ impl MCFunction {
             meta: meta.clone(),
             file: file.to_string(),
             compiled: false,
+            premc: 0,
         }
     }
 
@@ -1023,6 +1012,7 @@ impl MCFunction {
 
     fn compile_line(&mut self, mut ns: &Namespace, ln: usize) -> (usize, Vec<MCFunction>, Vec<String>) {
         let (rem, mut add, f, w) = self.compile_text(&mut ns, ln);
+        self.premc = add.len();
         self.commands.append(&mut add);
         (rem, f, w)
     }
@@ -1036,14 +1026,33 @@ impl MCFunction {
         }
         let path = &*self.get_path(ns);
         let text: &mut String = &mut self.lines[ln];
-        for i in self.vars.iter() {
-            *text = text.replace(&*["*{", &*i.0, "}"].join(""), &*i.1);
+
+        if text.starts_with("cmd") || ns.meta.opt_level == 255 {
+            return (1, vec![text[4..].into()], vec![], vec![]);
+        }
+        if text.starts_with("@NOLEX cmd") {
+            return (1, vec![text[11..].into()], vec![], vec![]);
+        }
+
+        for _ in 0..self.meta.recursive_replace {
+            for i in self.vars.iter() {
+                *text = text.replace(&*["*{", &*i.0, "}"].join(""), &*i.1);
+            }
         }
         *text = text.replace("*{NS}", &*ns.id)
-                    .replace("*{NAME}", &*ns.meta.name)
-                    .replace("*{INT_MAX}", "2147483647")
-                    .replace("*{INT_MIN}", "-2147483648")
-                    .replace("*NEAR1", "limit=1,sort=nearest");
+            .replace("*{NAME}", &*ns.meta.name)
+            .replace("*{INT_MAX}", "2147483647")
+            .replace("*{INT_MIN}", "-2147483648")
+            .replace("*{PATH}", &*join![&*self.file, "/"].replace("functions/", ""))
+            .replace("*NEAR1", "limit=1,sort=nearest")
+            .replace("positioned as @s ", "positioned as @s[] ")
+            .replace("as @s ", "")
+            .replace("@s[]", "@s")
+            .replace(" run execute", "")
+            .replace("execute run ", "")
+            .replace(" run run", " run")
+            .replace("execute execute ", "execute ");
+        
         MCFunction::parse_json_all(text);
         let mut cmds = vec![];
         let mut funs = vec![];
@@ -1059,7 +1068,12 @@ impl MCFunction {
         }
         let rem: usize = match keys[0] {
             "@DEBUG" => {
-                println!("\x1b[96m@DEBUG found: {} for {}\x1b[0m", self.ln + ln + 1, &self.name);
+                println!("\x1b[96m@DEBUG [{}]: {} for {}\x1b[0m", keys[1..].join(" "), self.ln + ln + 1, &self.name);
+                1
+            }
+            "@OUTPUT" => {
+                let output = self.commands.get((self.commands.len() - self.premc)..(self.commands.len())).map(|x| x.join("\n    ")).unwrap_or("".into());
+                println!("\x1b[94m@OUTPUT {}:{} [{}]:\x1b[0m \n    {}\n", self.premc, self.ln + ln + 1, keys[1..].join(" "), output);
                 1
             }
             "@ERROR" => {
@@ -1083,8 +1097,8 @@ impl MCFunction {
                 res
             }
             "}" => self.lines.len() - ln,
-            "cmd" => {
-                cmds.push(text[4..].to_string());
+            "i_cmd" => {
+                cmds.push(text[6..].to_string());
                 1
             }
             "//" => {
@@ -1105,7 +1119,7 @@ impl MCFunction {
                     .insert(0, (keys[1].to_string(), keys[2..].join(" ").to_string()));
                 1
             }
-            "loop" => { //TODO rework with remgine + temp
+            "loop" => {
                 //TODO ast + loop removes more than necessary (also double ifs and other stuff)
                 let count = keys[1].parse::<usize>().unwrap_or(0);
                 if count != 0 {
@@ -1240,7 +1254,7 @@ impl MCFunction {
                         text.replace_range(p..p + 7, &*[" as ", &text[p + 5..p + 7], " at @s"].join(""));
                     }
                 }
-                // TODO
+                // TODO make exe & ast parse inline ifs
                 // let pos = text.match_indices(" if ").map(|s| s.0).collect::<Vec<_>>();
                 // for p in pos {
                 //     if text.chars().collect::<Vec<char>>()[p + 7].eq(&'[') {
@@ -1385,7 +1399,7 @@ impl MCFunction {
                     cmds.push(["function ", &*name].join(""));
                     1
                 } else {
-                    *text = ["cmd ", &*text].join("");
+                    *text = ["i_cmd ", &*text].join("");
                     return self.compile_text(ns, ln);
                 }
             }
@@ -1664,7 +1678,7 @@ impl MCFunction {
     }
 
     fn parse_json_all(text: &mut String) {
-        let pos = text.match_indices("$JSON{").map(|s| s.0).collect::<Vec<_>>();
+        let pos = text.match_indices("*JSON{").map(|s| s.0).collect::<Vec<_>>();
         let mut rep = Vec::new();
         for p in pos {
             if let Ok(out) = Blocker::new().find_size(text, p + 5) {

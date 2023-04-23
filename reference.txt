@@ -51,9 +51,9 @@ ifs [!]<condition> {
     -> function + execute <if | unless> <statement> run function
 set <name> <value>
     -> Does not compile, stores internal value
-${<name>}
+*{<name>}
     -> Place anywhere to retrieve the value stored from let
-$JSON{}
+*JSON{}
 return
     -> Breaks from current execution
 loop < count | $var > {
@@ -79,12 +79,12 @@ csel player from id < num | $var >
 random <num>
     -> if predicate rem:rnd/<num>
 
-$NEAR1
-$JSON
-${NS}
-${NAME}
-${INT_MAX}
-${INT_MIN}
+*NEAR1
+*JSON
+*{NS}
+*{NAME}
+*{INT_MAX}
+*{INT_MIN}
 
 remgine.ignore = should be completely ignored by other datapack's commands
 remgine.no_target = should be completely ignored by other datapack's damaging/healing, weapons, items, effects, homing, etc
