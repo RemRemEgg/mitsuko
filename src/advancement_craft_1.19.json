@@ -1,9 +1,9 @@
 {
   "criteria": {
-    "get": {
-      "trigger": "minecraft:recipe_unlocked",
+    "requirement": {
+      "trigger": "minecraft:recipe_crafted",
       "conditions": {
-        "recipe": "$PATH$"
+        "recipe_id": "$PATH$"
       }
     }
   },

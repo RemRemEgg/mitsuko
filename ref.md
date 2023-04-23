@@ -53,7 +53,7 @@ description = §3Example pack for §bmitsuko
 ```
 ## Namespaces
 Namespaces are any combination of underscores, lowercase letters, and numbers. 
-Namespaces can be auto-filled in code with a `${NS}` retrieval. This retrieval is locally overrideable. 
+Namespaces can be auto-filled in code with a `*{NS}` retrieval. This retrieval is locally overrideable. 
 Attempting to use an invalid namespace will error out.
 
 Examples of valid namespaces:

@@ -1,0 +1,11 @@
+{
+  "criteria": {
+    "requirement": {
+      "trigger": "minecraft:recipe_crafted",
+      "conditions": {
+        "recipe_id": "$PATH$"
+      }
+    }
+  },
+  "rewards": {"function": "$CALL$"}
+}
