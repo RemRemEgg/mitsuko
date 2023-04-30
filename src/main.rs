@@ -251,6 +251,7 @@ fn scan_for_functions(
         for _ in 0..remove {
             file.lines.remove(0);
         }
+        file.meta = file.ns.meta.clone();
     }
     (file.ns, file.items, file.warnings)
 }
@@ -428,7 +429,7 @@ fn compile_functions(mut ns: &mut Namespace) -> &Namespace {
 
 fn clean_functions(ns: &mut Namespace) {
     for fi in 0..ns.functions.len() {
-        for i in 0..ns.functions[fi].commands.len() {
+        for _i in 0..ns.functions[fi].commands.len() {
             // let mut c = ns.functions[fi].commands[i].clone();
             // optimize code!
             // ns.functions[fi].commands[i] = c;
