@@ -12,6 +12,7 @@ use std::{env, fs, io};
 mod server;
 mod tests;
 mod build;
+mod ast;
 
 static VERBOSE: i32 = 0;
 static CURRENT_PACK_VERSION: u8 = 13;
