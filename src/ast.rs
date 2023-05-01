@@ -2,13 +2,15 @@
 
 use std::slice::Iter;
 
-struct Node {
+#[derive(Debug, Clone)]
+pub struct Node {
     node: NodeType,
     children: Vec<Node>,
     text: String,
 }
 
-enum NodeType {
+#[derive(Debug, Clone)]
+pub enum NodeType {
     None,
     EOF,
     Keyword,

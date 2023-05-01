@@ -1,15 +1,20 @@
 // for printing stuff i dont want in the main file
+
 use crate::*;
+
+pub mod errors {
+    pub const BAD_CLI_ARGS: i32 = 1;
+}
 
 pub fn print_warnings(pack: &Datapack) {
     if pack.warnings.len() > 0 {
         println!();
         status(format!(
             "'{}' Generated {} Warnings: ",
-            pack.meta.name,
+            pack.meta.view_name,
             pack.warnings.len()
         ));
-        let mut t = Datapack::blank();
+        let mut t = Datapack::new("error_display".into());
         for (i, e) in pack.warnings.iter().enumerate() {
             print_warning(
                 format!(
