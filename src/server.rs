@@ -1,54 +1,66 @@
 // for printing stuff i dont want in the main file
 
+use std::fs::{read_dir, ReadDir};
 use crate::*;
+
+static mut WARNINGS: Vec<String> = vec![];
+pub static mut HIT_ERROR: bool = false;
 
 pub mod errors {
     pub const BAD_CLI_ARGS: i32 = 1;
+    pub const TOO_MANY_ERRORS: i32 = 2;
 }
 
 pub fn print_warnings(pack: &Datapack) {
-    if pack.warnings.len() > 0 {
-        println!();
-        status(format!(
-            "'{}' Generated {} Warnings: ",
-            pack.meta.view_name,
-            pack.warnings.len()
-        ));
-        let mut t = Datapack::new("error_display".into());
-        for (i, e) in pack.warnings.iter().enumerate() {
-            print_warning(
-                format!(
-                    "{}{}",
-                    e,
-                    if i == pack.warnings.len() - 1 {
-                        "\n"
-                    } else {
-                        ""
-                    }
-                ),
-                &mut t,
-            );
+    unsafe {
+        if WARNINGS.len() > 0 {
+            println!();
+            status(format!(
+                "'{}' Generated {} Warnings: ",
+                pack.get_view_name(),
+                WARNINGS.len()
+            ));
+            for (i, e) in WARNINGS.iter().enumerate() {
+                print_warning(
+                    format!(
+                        "{}{}",
+                        e,
+                        if i == WARNINGS.len() - 1 {
+                            "\n"
+                        } else {
+                            ""
+                        }
+                    ),
+                );
+            }
         }
     }
 }
 
-pub fn warn(message: String, warnings: &mut Vec<String>) {
+pub fn warn(message: String) {
     println!("{}", join!("\x1b[93m‼»\x1b[m   [", &*"Warning".form_foreground(String::ORN).form_bold(), "] ", &*message));
-    warnings.push(message);
+    unsafe {
+        WARNINGS.push(message);
+    }
 }
 
-pub fn print_warning(message: String, pack: &mut Datapack) {
-    println!("\x1b[93m‼»\x1b[m   [{}] {}", pack.warnings.len(), message);
-    pack.warnings.push(message);
+unsafe fn print_warning(message: String) {
+    println!("\x1b[93m‼»\x1b[m   [{}] {}", WARNINGS.len(), message);
 }
 
 pub fn format_out(message: &str, path: &str, ln: usize) -> String {
     message.to_string() + &[" ./src/", path, ":", &*ln.to_string()].join("").replace("/", "\\")
 }
 
-pub fn error(message: String) -> ! {
-    eprintln!("{}", join!("💀   [", &*"Error".form_foreground(String::RED).form_italic().form_bold(), "] ", &*message));
-    panic!("{}", message);
+pub fn death_error(message: String) -> ! {
+    error(message);
+    stop_if_errors();
+    panic!();
+}
+
+pub fn error(message: String) {
+    unsafe {HIT_ERROR = true}
+    eprintln!("{}", join!("⮾   [", &*"Error".form_foreground(String::RED).form_italic().form_bold(), "] ", &*message));
 }
 
 pub fn status(message: String) {
