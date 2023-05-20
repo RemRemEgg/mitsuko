@@ -5,6 +5,7 @@ use std::fs::{DirEntry, File, read_dir, ReadDir, remove_dir_all};
 use std::io::Write;
 use std::time::Instant;
 use crate::{*, server::*, helpers::*};
+use crate::NodeType::Block;
 
 pub struct Datapack {
     meta: Meta,
@@ -238,8 +239,11 @@ impl Namespace {
 
     fn save(&mut self) {
         for function in self.functions.iter() {
-            let file = self.file(&*join!["functions/", &*function.get_path(), ".mcfunction"]);
-            file.save(function.get_write());
+            let files = function.get_save_files();
+            for save in files {
+                let file = self.file(&*join!["functions/", &*save.0, ".mcfunction"]);
+                file.save(save.1.join("\n"));
+            }
         }
     }
 }
@@ -248,7 +252,7 @@ impl Namespace {
 pub struct MCFunction {
     node: Option<Node>,
     path: String,
-    file_path: String,
+    pub file_path: String,
     call_name: String,
     pub calls: Vec<(String, usize)>,
     pub vars: Vec<(String, String)>,
@@ -303,8 +307,11 @@ impl MCFunction {
         (rem, optfn)
     }
 
-    fn is_valid_fn(function: &str) -> bool {
+    pub fn is_valid_fn(function: &str) -> bool {
         let mut function = function.split_once(":").unwrap_or(("", function)).1;
+        if function.len() < 3 {
+            return false;
+        }
         let mut nid = function[..function.len() - 2].replace(|ch| ch >= 'a' && ch <= 'z', "");
         nid = nid.replace(|ch| ch >= '0' && ch <= '9', "");
         nid = nid.replace("_", "");
@@ -312,7 +319,7 @@ impl MCFunction {
         nid = nid.replace(".", "");
         nid.len() == 0 && function.ends_with("()")
     }
-    
+
     fn extract_from(lines: &Vec<String>, file: &String, keys: &Vec<String>, ns: &mut Namespace, ln: usize)
                     -> (usize, MCFunction) {
         let mut mcf = MCFunction::new(path_without_functions(file.to_string()),
@@ -339,7 +346,7 @@ impl MCFunction {
         }
     }
 
-    fn extract_block(&mut self, lines: &Vec<String>, ns: &mut Namespace, ln: usize) -> usize { 
+    fn extract_block(&mut self, lines: &Vec<String>, ns: &mut Namespace, ln: usize) -> usize {
         if lines[0].ends_with('}') {
             return 1;
         }
@@ -375,27 +382,111 @@ impl MCFunction {
             vars: vec![],
             meta: ns.meta.clone(),
             ln,
-            ns_id: ns.id.clone()
+            ns_id: ns.id.clone(),
         }
+    }
+
+    pub fn is_score_path(path: &String, mcf: &mut MCFunction, ln: usize) -> bool {
+        if let Ok(keys) = Blocker::new().split_in_same_level(":", &path) {
+            if keys.len() == 2 && MCFunction::is_board_id(&keys[1], mcf, ln) {
+                return if keys[0].starts_with("@") {
+                    MCFunction::is_at_ident(keys[0].clone(), true, mcf, ln)
+                } else {
+                    let nb = keys[0].trim_start_matches(|ch|
+                        (ch >= 'a' && ch <= 'z') ||
+                            (ch >= 'A' && ch <= 'Z') ||
+                            (ch >= '0' && ch <= '9') ||
+                            (ch >= '#' && ch <= '%') ||
+                            (ch == '_'));
+                    nb.len() == 0
+                };
+            }
+        }
+        path.starts_with("$") && MCFunction::is_board_id(&path[1..].to_string(), mcf, ln) && require::remgine("temporary scores", mcf, ln)
+    }
+
+    pub fn is_board_id(board: &String, mcf: &mut MCFunction, ln: usize) -> bool {
+        let mut board = board.clone();
+        if let Some(nb) = board.strip_prefix("r&") {
+            require::remgine("remgine scoreboards", mcf, ln);
+            board = nb.into();
+        } else if let Some(nb) = board.strip_prefix("&") {
+            board = nb.into();
+        }
+        let nb = board.trim_start_matches(|ch|
+            (ch >= 'a' && ch <= 'z') ||
+                (ch >= 'A' && ch <= 'Z') ||
+                (ch >= '0' && ch <= '9') ||
+                (ch == '_'));
+        return nb.len() == 0;
+    }
+
+    pub fn is_at_ident(mut selector: String, error_if_not: bool, mcf: &mut MCFunction, ln: usize) -> bool {
+        let esave = selector.clone();
+        return if selector.starts_with("@") && {
+            selector.remove(0);
+            selector.starts_with(['s', 'e', 'a', 'r', 'p'])
+        } && {
+            if selector.len() > 1 {
+                selector[1..2] == *"[" && selector.strip_suffix(']').is_some()
+            } else { true }
+        } { true } else if error_if_not {
+            error(format_out(&*format!("Selector expected, got '{}'", esave), &*mcf.get_file_loc(), ln));
+            false
+        } else {
+            false
+        };
+    }
+
+    pub fn compile_score_path(path: &String, mcf: &mut MCFunction, ln: usize) -> String {
+        if let Ok(mut split) = Blocker::new().split_in_same_level(":", path) {
+            match split.len() {
+                2 => {
+                    if !split[1].contains(" ") {
+                        if split[1].starts_with("r&") && require::remgine("remgine scoreboards", mcf, ln) {
+                            split[1] = split[1].replace("r&", "remgine.")
+                        }
+                        split[1] = split[1].replace("&", &*join![&*mcf.ns_id, "."]);
+                        return join![&*split[0], " ", &*split[1]];
+                    }
+                },
+                1 => {
+                    if split[0].starts_with("$") && require::remgine("remgine temp scoreboard", mcf, ln) {
+                        return join![&*split[0], " remgine.temp"];
+                    }
+                }
+                _ => {}
+            }
+        }
+        error(format_out(&*format!("Failed to compile '{}' to a scoreboard", path), &*mcf.get_file_loc(), ln));
+        "".into()
     }
     
     fn compile(&mut self) {
         let mut node = self.node.take().unwrap();
-        node.compile(self);
+        node.generate(self);
         self.node = Some(node);
     }
-    
+
     pub fn get_file_loc(&self) -> String {
         join![&*self.ns_id, "/functions/", &*self.file_path]
     }
-    
-    fn get_path(&self) -> String {
+
+    pub fn get_path(&self) -> String {
         return join![&*self.path, "/", &*self.call_name];
     }
 
-    fn get_write(&self) -> String {
-        let mut v = vec![];
-        self.node.as_ref().unwrap().get_write(&mut v, self);
-        v.join("\n")
+    // fn get_write(&self) -> String {
+    //     let mut v = vec![];
+    //     self.node.as_ref().unwrap().get_write(, &mut v, self);
+    //     v.join("\n")
+    // }
+
+    fn get_save_files(&self) -> SaveFiles {
+        let mut saves = vec![];
+        self.node.clone().unwrap().get_save_files(&mut saves, &mut vec![], self);
+        saves
     }
 }
+
+pub type SaveFiles = Vec<(String, Vec<String>)>;

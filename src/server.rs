@@ -82,6 +82,13 @@ macro_rules! join {
     };
 }
 
+#[macro_export]
+macro_rules! qc {
+    ($s:expr, $t:expr, $f:expr) => {
+        if $s {$t} else {$f}
+    };
+}
+
 pub trait FancyText: ToString {
     const GRY: usize = 0; //ignore
     const RED: usize = 1; //errors

@@ -162,6 +162,12 @@ impl Blocker {
             string: false,
         }
     }
+    
+    pub fn reset(&mut self) -> &mut Blocker {
+        self.stack.clear();
+        self.string = false;
+        self
+    }
 
     // pub fn find_rapid_close(&mut self, lines: &Vec<String>, closer: char) -> Result<usize, String> {
     //     let mut c: usize = 0;
@@ -290,14 +296,14 @@ impl Blocker {
         Ok(Blocker::NOT_FOUND)
     }
 
-    pub fn find_in_same_level(&mut self, needle: &str, haystack: &String) -> Result<usize, String> {
+    pub fn find_in_same_level(&mut self, needle: &str, haystack: &String) -> Result<Option<usize>, String> {
         let mut pos = 0;
         loop {
             if pos >= haystack.len() {
-                return Ok(Blocker::NOT_FOUND);
+                return Ok(None);
             }
             if haystack[pos..].starts_with(needle) {
-                return Ok(pos);
+                return Ok(Some(pos));
             }
             let res = self.find_size(&haystack, pos)?;
             if res != Blocker::NOT_FOUND {
