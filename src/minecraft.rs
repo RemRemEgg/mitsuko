@@ -4,7 +4,7 @@ use std::cmp::min;
 use std::fs::{DirEntry, File, read_dir, ReadDir, remove_dir_all};
 use std::io::Write;
 use std::time::Instant;
-use crate::{*, server::*, helpers::*};
+use crate::{*, server::*};
 use crate::NodeType::Block;
 
 pub struct Datapack {
@@ -265,7 +265,7 @@ impl MCFunction {
     fn process_function_file(ns: &mut Namespace, file: String, mut lines: Vec<String>) {
         status(join!["Processing function file '", &*file.form_foreground(str::BLU), "'"]);
         let mut fns = vec![];
-        let mut ln = 0usize;
+        let mut ln = 1usize;
         'lines: loop {
             if lines.len() <= 0 {
                 break 'lines;
@@ -295,7 +295,7 @@ impl MCFunction {
                     error(format_out(
                         &*join!["Invalid function name \'", &*key_2.form_foreground(str::BLU), "\'"],
                         &*ns.extend_path(&*file),
-                        ln + 1,
+                        ln,
                     ));
                 }
                 let res = MCFunction::extract_from(lines, file, &keys, ns, ln);
@@ -438,7 +438,7 @@ impl MCFunction {
         };
     }
 
-    pub fn compile_score_path(path: &String, mcf: &mut MCFunction, ln: usize) -> String {
+    pub fn compile_score_path(path: &String, mcf: &mut MCFunction, ln: usize) -> [String; 2] {
         if let Ok(mut split) = Blocker::new().split_in_same_level(":", path) {
             match split.len() {
                 2 => {
@@ -447,21 +447,85 @@ impl MCFunction {
                             split[1] = split[1].replace("r&", "remgine.")
                         }
                         split[1] = split[1].replace("&", &*join![&*mcf.ns_id, "."]);
-                        return join![&*split[0], " ", &*split[1]];
+                        return [split[0].clone(), split[1].clone()];
                     }
-                },
+                }
                 1 => {
                     if split[0].starts_with("$") && require::remgine("remgine temp scoreboard", mcf, ln) {
-                        return join![&*split[0], " remgine.temp"];
+                        return [split[0].clone(), "remgine.temp".to_string()];
                     }
                 }
                 _ => {}
             }
         }
         error(format_out(&*format!("Failed to compile '{}' to a scoreboard", path), &*mcf.get_file_loc(), ln));
-        "".into()
+        ["".into(), "".into()]
     }
-    
+
+    pub fn compile_score_command(keys: &Vec<String>, mcf: &mut MCFunction, ln: usize) -> Vec<String> {
+        let mut cds = vec![];
+        let mut command = "scoreboard players ".to_string();
+        let target = MCValue::new(&keys[0], mcf, ln);
+        if keys.len() < 3 {
+            match &**keys.get(1).unwrap_or(&"get".into()) {
+                "--" => {
+                    command.push_str(&*join!("remove ", &*target.get(), " 1"));
+                }
+                "++" => {
+                    command.push_str(&*join!("add ", &*target.get(), " 1"));
+                }
+                v @ ("reset" | "enable" | "get") => {
+                    command.push_str(&*join!(v, " ", &*target.get()));
+                }
+                _ => {
+                    error(format_out(
+                        &*join!("Failed to parse score function, unknown operation '", &*keys[1].form_foreground(str::BLU), "'"),
+                        &*mcf.get_file_loc(), ln));
+                }
+            }
+            cds.push(command);
+            return cds;
+        }
+        let target2 = MCValue::new(&keys[2].to_string(), mcf, ln);
+        if !target2.is_number() {
+            command.push_str("operation ");
+            match &*keys[1] {
+                "=" | "+=" | "-=" | "%=" | "*=" | "/=" | "<" | ">" | "><" => {
+                    command.push_str(&*join!(&*target.get(), " ", &*keys[1], " ", &*target2.get()));
+                }
+                _ => {
+                    error(format_out(
+                        &*join!("Failed to parse score function, unknown operation '", &*keys[1].form_foreground(str::BLU), "'"),
+                        &*mcf.get_file_loc(), ln));
+                }
+            }
+        } else {
+            match &*keys[1] {
+                "=" => {
+                    command.push_str(&*["set", &*target.get(), &*target2.get()].join(" "));
+                }
+                "+=" => {
+                    command.push_str(&*["add", &*target.get(), &*target2.get()].join(" "));
+                }
+                "-=" => {
+                    command.push_str(&*["remove", &*target.get(), &*target2.get()].join(" "));
+                }
+                "*=" | "%=" | "/=" | ">" | "<" | "><" if require::remgine("advanced operations", mcf, ln) => {
+                    warn(format_out("Advanced operations on numbers are sub-optimal", &*mcf.get_file_loc(), ln));
+                    cds.push(join!("scoreboard players set $adv_op remgine.temp ", &*target2.get()));
+                    command.push_str(&*join!("operation ", &*target.get(), " ", &*keys[1], " $adv_op remgine.temp"));
+                }
+                _ => {
+                    error(format_out(
+                        &*join!("Failed to parse score function, unknown operation '", &*keys[1].form_foreground(str::BLU), "'"),
+                        &*mcf.get_file_loc(), ln));
+                }
+            }
+        }
+        cds.push(command);
+        return cds;
+    }
+
     fn compile(&mut self) {
         let mut node = self.node.take().unwrap();
         node.generate(self);
@@ -490,3 +554,36 @@ impl MCFunction {
 }
 
 pub type SaveFiles = Vec<(String, Vec<String>)>;
+
+pub enum MCValue {
+    Score { name: String, board: String },
+    Number { value: i32 },
+}
+
+impl MCValue {
+    pub fn new(key: &String, mcf: &mut MCFunction, ln: usize) -> MCValue {
+        if MCFunction::is_score_path(key, mcf, ln) {
+            let vv = MCFunction::compile_score_path(key, mcf, ln);
+            MCValue::Score {name: vv[0].clone(), board: vv[1].clone()}
+        } else {
+            MCValue::Number {value: if let Ok(val) = key.parse::<i32>() {val} else {
+                error(format_out(&*join!["Failed to parse '", &**key, "' as a number"], &*mcf.get_file_loc(), ln));
+                0
+            }}
+        }
+    }
+    
+    pub fn is_number(&self) -> bool {
+        match self {
+            MCValue::Score { .. } => { false }
+            MCValue::Number { .. } => { true }
+        }
+    }
+    
+    pub fn get(&self) -> String {
+        match self {
+            MCValue::Score { name, board } => { join![&**name, " ", &**board] }
+            MCValue::Number { value } => { value.to_string() }
+        }
+    }
+}

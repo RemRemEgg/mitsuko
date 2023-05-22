@@ -54,9 +54,7 @@ set <name> <value>
 *{<name>}
     -> Place anywhere to retrieve the value stored from let
 *JSON{}
-return
-    -> Breaks from current execution
-loop < count | $var > {
+repeat < count | $var > {
     **
 }
     -> Repeats the given code <count> or <$var> times
@@ -88,6 +86,13 @@ random <num>
 
 remgine.ignore = should be completely ignored by other datapack's commands
 remgine.no_target = should be completely ignored by other datapack's damaging/healing, weapons, items, effects, homing, etc
+
+optimizations
+0 : none
+1 : basic (find/replace, inline blocks)
+2 : advanced (global static vars, inline functions)
+3 : experimental
+
 
 todo:
 binary search tree
