@@ -3,9 +3,11 @@
 use std::cmp::min;
 use std::error::Error;
 use std::fmt::{Debug, Formatter};
+use std::process::Termination;
 use std::slice::Iter;
-use crate::{death_error, error, format_out, join, MCFunction, Namespace, qc, SaveFiles};
-use crate::NodeType::{Block, Command, Comment, Scoreboard};
+use crate::{death_error, error, format_out, join, MCFunction, MCValue, Namespace, qc, SaveFiles, compile, COMMANDS, warn};
+use crate::compile::require;
+use crate::NodeType::{Block, Command, Comment, FnCall, Scoreboard};
 use crate::server::{Blocker, FancyText, path_without_functions};
 
 #[derive(Debug, Clone)]
@@ -13,7 +15,7 @@ pub struct Node {
     pub node: NodeType,
     children: Vec<Node>,
     pub lines: Vec<String>,
-    ln: usize,
+    pub(crate) ln: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -25,6 +27,7 @@ pub enum NodeType {
     Command,
     Scoreboard,
     Block(char),
+    FnCall(String),
 
     Comment,
 }
@@ -76,7 +79,7 @@ impl Node {
         self.children.iter()
     }
 
-    pub fn get_save_files(&mut self, files: &mut SaveFiles, lines: &mut Vec<String>, mcf: &MCFunction) {
+    pub fn get_save_files(&mut self, files: &mut SaveFiles, lines: &mut Vec<String>, mcf: &mut MCFunction) {
         use crate::NodeType::*;
         match &self.node {
             Root => {
@@ -122,7 +125,7 @@ impl Node {
                 }
                 lines.append(&mut self.lines);
             }
-            Scoreboard => {
+            Scoreboard | FnCall(_) => {
                 lines.append(&mut self.lines);
             }
             Comment if mcf.meta.comments => {
@@ -132,9 +135,9 @@ impl Node {
             Comment | None | EOF => {}
         }
     }
-    
-    fn add_to_files(&mut self, files: &mut SaveFiles, path: String, lines: &mut Vec<String>, mcf: &MCFunction) {
-        qc!(mcf.meta.opt_level >= 1, Node::optimize_lines(lines), ());
+
+    fn add_to_files(&mut self, files: &mut SaveFiles, path: String, lines: &mut Vec<String>, mcf: &mut MCFunction) {
+        compile::finish_lines(lines, mcf);
         files.push((path, lines.clone()));
     }
 
@@ -145,8 +148,8 @@ impl Node {
                 self.generate_text(mcf);
             }
 
-            Scoreboard | Command => {
-                self.compile_text(mcf);
+            Scoreboard | Command | FnCall(_) => {
+                compile::node_text(self, mcf);
             }
 
             None | Comment | EOF => {}
@@ -172,13 +175,8 @@ impl Node {
                     self.lines[0] = self.lines[0].replace(&*["*{", &*i.0, "}"].join(""), &*i.1);
                 }
             }
-            self.lines[0] = self.lines[0].replace("*{NS}", &*mcf.ns_id)
-                .replace("*{NAME}", &*mcf.meta.view_name)
-                .replace("*{INT_MAX}", "2147483647")
-                .replace("*{INT_MIN}", "-2147483648")
-                .replace("*{PATH}", &*mcf.get_file_loc())
-                .replace("*{NEAR1}", "limit=1,sort=nearest")
-                .replace("*{LN}", &*(self.ln + ln).to_string());
+            self.lines[0] = compile::replacements(&self.lines[0], self, mcf, ln);
+
             let (rem, mut nn) = Node::build_from_lines(&mut self.lines, mcf, self.ln + ln);
             for _ in 0..min(rem, self.lines.len()) {
                 self.lines.remove(0);
@@ -201,7 +199,26 @@ impl Node {
         let mut node = Node::new(NodeType::None, ln);
         let mut rem = 1;
         match &*keys[0] {
-            "ast" if require::min_args(2, &keys, mcf, ln) => {
+            "@DEBUG" => {
+                println!("\x1b[96m@DEBUG [{}]: {} for {}\x1b[0m", keys[1..].join(" "), ln, lines[0]);
+            }
+            "@TREE" => {
+                lines.remove(0);
+                let (remx, nna) = Node::build_from_lines(lines, mcf, ln);
+                println!("\x1b[94m@TREE {}:{} [{}]:\x1b[0m", &*mcf.get_file_loc(), ln, keys[1..].join(" "));
+                if let Some(node) = nna.clone() {
+                    node.print_tree(0);
+                }
+                return (remx, nna);
+            }
+            "@DBG_ERROR" => {
+                error(format_out(
+                    &*format!("\x1b[94m@DBG_ERROR [{}]\x1b[0m", keys[1..].join(" ")),
+                    &*mcf.get_file_loc(),
+                    ln,
+                ));
+            }
+            "ast" => {
                 lines[0] = ["execute ", &*lines[0]].join("");
                 return Node::build_from_lines(lines, mcf, ln);
             }
@@ -229,7 +246,6 @@ impl Node {
                     }
                 }
             }
-            "if" if require::min_args(2, &keys, mcf, ln) => {}
             "set" if require::min_args(3, &keys, mcf, ln) => {
                 node.node = NodeType::None;
                 mcf.vars.retain(|x| !x.0.eq(&*keys[1]));
@@ -242,12 +258,17 @@ impl Node {
             }
             "repeat" if require::exact_args(3, &keys, mcf, ln) => {
                 let (remx, mut nna) = Node::build_extract_block(lines, &mut node, mcf, 'r');
-                nna.lines.insert(0, keys[1].parse::<u32>().unwrap_or_else(|e| {
+                nna.lines.insert(0, join!["cmd ", &*keys[1].parse::<u32>().unwrap_or_else(|e| {
                     error(format_out(&*join!["Failed to parse '", &*keys[1], "' to a number"],
                                      &*mcf.get_file_loc(), ln));
                     1
-                }).to_string());
+                }).to_string()]);
                 return (remx, Some(nna));
+            }
+            "if" if require::min_args(2, &keys, mcf, ln) => {
+                qc!(keys.len() > 2, keys.insert(2, "run".into()), ());
+                lines[0] = join!["execute ", &*keys.join(" ")];
+                return Node::build_from_lines(lines, mcf, ln);
             }
             _ if MCFunction::is_score_path(&keys[0], mcf, ln) => {
                 node.node = Scoreboard;
@@ -272,9 +293,18 @@ impl Node {
                 node.node = Comment;
                 node.lines = vec![join!["#", &lines[0][2..]]];
             }
-            _ => {
-                node.node = Command;
-                node.lines = vec![lines[0].clone()];
+            _ if keys[0].is_empty() => {
+                node.node = Comment;
+                node.lines = vec!["".into()];
+            }
+            f @ _ => {
+                if let Some(path) = compile::is_fn_call(f, mcf) {
+                    node.lines = vec![join!["function ", &*path]];
+                    node.node = FnCall(path);
+                } else {
+                    node.node = Command;
+                    node.lines = vec![lines[0].clone()];
+                }
             }
         }
         (rem, if !node.node.is_none() { Some(node) } else { None })
@@ -294,151 +324,5 @@ impl Node {
             }
             Err(e) => death_error(format_out(&*e.0, &*mcf.get_file_loc(), e.1 + node.ln)),
         }
-    }
-
-    fn compile_text(&mut self, mcf: &mut MCFunction) {
-        if self.lines.len() == 0 {
-            return;
-        }
-        match &self.node {
-            Command => {
-                let keys = Blocker::new().split_in_same_level(" ", &self.lines[0]);
-                if let Err(e) = keys {
-                    error(format_out(&*e, &*mcf.get_file_loc(), self.ln));
-                    return;
-                }
-                let mut keys = keys.unwrap();
-                match &*keys[0] {
-                    "cmd" => {
-                        self.lines = vec![keys.get(1..).unwrap_or(&[String::new()]).join(" ")];
-                    }
-                    "ast" => {
-                        self.lines[0] = ["execute ", &*self.lines[0]].join("");
-                        self.compile_text(mcf);
-                    }
-                    "exe" => {
-                        self.lines[0] = ["execute ", &self.lines[0][4..]].join("");
-                        self.compile_text(mcf);
-                    }
-                    "execute" => {
-                        let mut blk = Blocker::new();
-                        while let Ok(Some(pos1)) = blk.reset().find_in_same_level(" ast ", &self.lines[0]) {
-                            if let Ok(pos2) = blk.reset().find_in_same_level(" ", &self.lines[0][pos1 + 5..].into()) {
-                                let pos2 = pos2.unwrap_or(self.lines[0].len() - pos1 - 5);
-                                self.lines[0].insert_str(pos1 + 5 + pos2, " at @s");
-                                self.lines[0].replace_range(pos1..pos1 + 5, " as ");
-                            } else {
-                                break;
-                            }
-                        }
-                    }
-                    "create" => {
-                        if keys.len() == 2 {
-                            keys.push("dummy".into());
-                        }
-                        if keys[1].starts_with("&") {
-                            keys[1].replace_range(0..1, ".");
-                            keys[1].replace_range(0..0, &*mcf.ns_id);
-                        }
-                        self.lines[0] = join!["scoreboard objectives add ", &*keys[1..].join(" ")];
-                    }
-                    "remove" => {
-                        if keys[1].starts_with("&") {
-                            keys[1].replace_range(0..1, ".");
-                            keys[1].replace_range(0..0, &*mcf.ns_id);
-                        }
-                        self.lines[0] = join!["scoreboard objectives remove ", &*keys[1]];
-                    }
-                    "rmm" if require::remgine("rmm", mcf, self.ln) => {
-                        let cmd = "function remgine:utils/rmm".to_string();
-                        if keys.len() == 1 {
-                            return {
-                                self.lines = vec![cmd];
-                            };
-                        }
-                        return if keys[1].eq("set") && require::exact_args(4, &keys, mcf, self.ln) {
-                            let power = keys[3].parse::<i8>().unwrap_or(0);
-                            self.lines = vec![join!["scoreboard players set ", &*keys[2], " remgine.rmm ", &*power.to_string()]];
-                        } else {
-                            let power = keys[1].parse::<i8>().unwrap_or(0);
-                            self.lines = vec![join!["scoreboard players set @s remgine.rmm ", &*power.to_string()], cmd];
-                        };
-                    }
-                    mut f @ _ => {//todo
-                        if let Some(path) = Node::is_fn_call(f, mcf) {
-                            self.lines[0] = join!["function ", & * path];
-                        }
-                    }
-                }
-            }
-            Scoreboard => {
-                let keys = Blocker::new().split_in_same_level(" ", &self.lines[0]);
-                if let Err(e) = keys {
-                    error(format_out(&*e, &*mcf.get_file_loc(), self.ln));
-                    return;
-                }
-                let mut keys = keys.unwrap();
-                self.lines = MCFunction::compile_score_command(&keys, mcf, self.ln);
-            }
-            NodeType::None | NodeType::EOF => {
-                self.lines = vec![];
-            }
-            _ => {}
-        }
-    }
-
-    fn is_fn_call(call: &str, mcf: &mut MCFunction) -> Option<String> {
-        let mut call = call.clone();
-        if call.len() < 2 { return None; };
-        let local = call.starts_with("&");
-        let tag = call.starts_with("#");
-        call = call[(local as usize + tag as usize)..].into();
-        return if MCFunction::is_valid_fn(&*call) {
-            call = call.trim_end_matches("()");
-            let (ns, name) = call.split_once(":").unwrap_or((&*mcf.ns_id, call));
-            let path = qc!(local, path_without_functions(mcf.file_path.clone()), "".into());
-            Some(join![qc!(tag, "#", ""), ns, ":", &*path, qc!(local && path.len() > 0, "/", ""), name])
-        } else {
-            None
-        };
-    }
-    
-    fn optimize_lines(lines: &mut Vec<String>) {
-        lines.iter_mut().map(|line| {
-            *line = line.replace("positioned as @s ", "positioned as @s[] ")
-                .replace("as @s ", "")
-                .replace("@s[]", "@s")
-                .replace(" run execute", "")
-                .replace("execute run ", "")
-                .replace(" run run", " run")
-                .replace("execute execute ", "execute ")
-        }).collect()
-    }
-}
-
-pub mod require {
-    use std::fmt::{Debug, Display};
-    use crate::{error, format_out, join, MCFunction};
-    use crate::server::FancyText;
-
-    pub fn min_args<T: Display>(count: usize, keys: &Vec<T>, mcf: &mut MCFunction, ln: usize) -> bool {
-        if keys.len() < count {
-            error(format_out(&*format!("Not enough arguments for '{}' ({} expected, found {})", keys[0], count, keys.len()), &*mcf.get_file_loc(), ln))
-        }
-        keys.len() >= count
-    }
-
-    pub fn exact_args<T: Display>(count: usize, keys: &Vec<T>, mcf: &mut MCFunction, ln: usize) -> bool {
-        if keys.len() != count {
-            error(format_out(&*format!("Wrong number of arguments for '{}' ({} expected, found {})", keys[0], count, keys.len()), &*mcf.get_file_loc(), ln))
-        }
-        keys.len() == count
-    }
-
-    pub fn remgine(item: &str, mcf: &mut MCFunction, ln: usize) -> bool {
-        if !mcf.meta.remgine {
-            error(format_out(&*join!("Remgine is required to use [", &*item.form_foreground(str::AQU), "]"), &*mcf.get_file_loc(), ln))
-        }
-        mcf.meta.remgine
     }
 }

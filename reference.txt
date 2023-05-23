@@ -96,3 +96,10 @@ optimizations
 
 todo:
 binary search tree
+
+
+["return","advancement","attribute","bossbar","clear","clone","data","datapack","debug","defaultgamemode","difficulty",
+"effect","enchant","execute","experience","fill","forceload","function","gamemode","gamerule","give","help","kick","kill",
+"list","locate","loot","me","msg","particle","playsound","publish","recipe","reload","item","say","schedule","scoreboard",
+"seed","setblock","setworldspawn","spawnpoint","spectate","spreadplayers","stopsound","summon","tag","team","teammsg","teleport",
+"tell","tellraw","time","title","tm","tp","trigger","weather","worldborder","xp","jfr","place","fillbiome","ride","damage"]

@@ -2,26 +2,38 @@
 
 use std::fs::{DirEntry, File, read_dir, ReadDir};
 use std::ffi::OsStr;
+use std::io;
 use std::io::Write;
+use std::path::Path;
 use crate::*;
 
+pub static COMMANDS: [&str; 65] = ["return", "advancement", "attribute", "bossbar", "clear", "clone", "data", "datapack", "debug", "defaultgamemode", "difficulty",
+    "effect", "enchant", "execute", "experience", "fill", "forceload", "function", "gamemode", "gamerule", "give", "help", "kick", "kill",
+    "list", "locate", "loot", "me", "msg", "particle", "playsound", "publish", "recipe", "reload", "item", "say", "schedule", "scoreboard",
+    "seed", "setblock", "setworldspawn", "spawnpoint", "spectate", "spreadplayers", "stopsound", "summon", "tag", "team", "teammsg", "teleport",
+    "tell", "tellraw", "time", "title", "tm", "tp", "trigger", "weather", "worldborder", "xp", "jfr", "place", "fillbiome", "ride", "damage"];
+
 static mut WARNINGS: Vec<String> = vec![];
+pub static mut SUPPRESS_WARNINGS: bool = false;
+pub static mut KNOWN_FUNCTIONS: Vec<String> = vec![];
 pub static mut HIT_ERROR: bool = false;
 
 pub mod errors {
-    pub const BAD_CLI_ARGS: i32 = 1;
-    pub const TOO_MANY_ERRORS: i32 = 2;
+    pub const UNKNOWN_ERROR: i32 = -86;
+    pub const BAD_CLI_ARGS: i32 = 10;
+    pub const TOO_MANY_ERRORS: i32 = 20;
+    pub const NO_PACK_MSK: i32 = 30;
 }
 
 pub fn print_warnings(pack: &Datapack) {
     unsafe {
-        if WARNINGS.len() > 0 {
+        if WARNINGS.len() > 0 && !SUPPRESS_WARNINGS {
             println!();
             status(format!(
                 "'{}' Generated {} Warnings: ",
                 pack.get_view_name(),
                 WARNINGS.len()
-            ));
+            ).form_foreground(str::ORN));
             for (i, e) in WARNINGS.iter().enumerate() {
                 print_warning(
                     format!(
@@ -32,16 +44,23 @@ pub fn print_warnings(pack: &Datapack) {
                         } else {
                             ""
                         }
-                    ), i
+                    ), i,
                 );
             }
+        }
+        if SUPPRESS_WARNINGS {
+            SUPPRESS_WARNINGS = false;
+            warn("SUPPRESS_WARNINGS is turned on!".into());
+            SUPPRESS_WARNINGS = true;
         }
     }
 }
 
 pub fn warn(message: String) {
-    println!("{}", join!("\x1b[93m‼»\x1b[m   [", &*"Warning".form_foreground(String::ORN).form_bold(), "] ", &*message));
     unsafe {
+        if !SUPPRESS_WARNINGS {
+            println!("{}", join!("\x1b[93m‼»\x1b[m   [", &*"Warning".form_foreground(String::ORN).form_bold(), "] ", &*message));
+        }
         WARNINGS.push(message);
     }
 }
@@ -51,17 +70,22 @@ unsafe fn print_warning(message: String, i: usize) {
 }
 
 pub fn format_out(message: &str, path: &str, ln: usize) -> String {
-    message.to_string() + &[" ./src/", path, ":", &*ln.to_string()].join("").replace("/", "\\")
+    message.to_string() + " " + &join!["./src/", path, ".msk:", &*ln.to_string(), ""].replace("\\", "/").replace("/.msk", "/functions.msk")
+        .form_underline().form_foreground(str::GRY)
 }
 
 pub fn death_error(message: String) -> ! {
+    death_error_type(message, errors::UNKNOWN_ERROR);
+}
+
+pub fn death_error_type(message: String, etype: i32) -> ! {
     error(message);
-    stop_if_errors();
-    panic!();
+    status_color("Aborting".into(), str::RED);
+    exit(etype);
 }
 
 pub fn error(message: String) {
-    unsafe {HIT_ERROR = true}
+    unsafe { HIT_ERROR = true }
     eprintln!("{}", join!("⮾   [", &*"Error".form_foreground(String::RED).form_italic().form_bold(), "] ", &*message));
 }
 
@@ -92,13 +116,20 @@ macro_rules! qc {
 }
 
 pub trait FancyText: ToString {
-    const GRY: usize = 0; //ignore
-    const RED: usize = 1; //errors
-    const GRN: usize = 2; //good stuff
-    const ORN: usize = 3; //warns
-    const BLU: usize = 4; //names
-    const PNK: usize = 5; //ns
-    const AQU: usize = 6; //debug
+    const GRY: usize = 0;
+    //ignore
+    const RED: usize = 1;
+    //errors
+    const GRN: usize = 2;
+    //good stuff
+    const ORN: usize = 3;
+    //warns
+    const BLU: usize = 4;
+    //names
+    const PNK: usize = 5;
+    //ns
+    const AQU: usize = 6;
+    //debug
     const WHT: usize = 7; //unused
 
     fn form_bold(&self) -> String {
@@ -157,6 +188,20 @@ pub fn make_folder(path: &str) {
     });
 }
 
+pub(crate) fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<()> {
+    fs::create_dir_all(&dst)?;
+    for entry in read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            copy_dir_all(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        } else {
+            fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        }
+    }
+    Ok(())
+}
+
 pub struct MFile {
     path: String,
     file: File,
@@ -177,9 +222,9 @@ impl MFile {
     }
 }
 
-pub fn get_msk_files_split(fn_f: ReadDir, offset: usize) -> Vec<(String, Vec<String>)> {
+pub fn get_msk_files_split(msk_f: ReadDir, offset: usize) -> Vec<(String, Vec<String>)> {
     let mut out = vec![];
-    for dir_r in fn_f {
+    for dir_r in msk_f {
         if dir_r.is_err() {
             error(join!["Failed to read file (", &*dir_r.expect_err("spaghetti").to_string(), ")"]);
             continue;
@@ -288,7 +333,7 @@ impl Blocker {
             string: false,
         }
     }
-    
+
     pub fn reset(&mut self) -> &mut Blocker {
         self.stack.clear();
         self.string = false;
@@ -439,7 +484,7 @@ impl Blocker {
             }
         }
     }
-    
+
     pub fn split_in_same_level(&mut self, blade: &str, haystack: &String) -> Result<Vec<String>, String> {
         let mut out = Vec::new();
         let mut pos = 0;

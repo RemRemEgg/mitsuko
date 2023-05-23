@@ -58,15 +58,14 @@ Attempting to use an invalid namespace will error out.
 
 Examples of valid namespaces:
 * trees
-* other_ns
+* example_ns
 * v
 * _alpha2
 * 135
 
 Examples of invalid namespaces:
 * Trees
-* other ns
-* guns&roses
+* example ns
 * Simon F-ing Cowell
 * ♂
 
@@ -77,7 +76,7 @@ The normal format for tags is `#[<name> = <value>]`.
 ### List of tags
 * comments (bool) : Should comments & whitespace be transferred, default false
 * debug (0..2) : Debug verbosity, default 0
-* »optimizations (0..?) : How far to optimize code, default 0
+* optimizations (0..?) : How far to optimize code, default 0
 * recursive_replace (0..255) : How any recursions to go for internal values, default 3
 
 ### pack.msk only
@@ -88,7 +87,7 @@ The normal format for tags is `#[<name> = <value>]`.
 
 ## Function Files
 Function files are the files that get compiled into `.mcfunction`s. 
-They are located in the ./src/<<x>namespace>/
+They are located in the ./src/<<x>namespace>/functions/ folder.
 
 ---
 # Actual Code

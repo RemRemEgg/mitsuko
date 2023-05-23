@@ -1254,7 +1254,7 @@ impl MCFunction {
                     } else {
                         text.replace_range(p..p + 7, &*[" as ", &text[p + 5..p + 7], " at @s"].join(""));
                     }
-                }
+                    }
                 // TODO make exe & ast parse inline ifs
                 // let pos = text.match_indices(" if ").map(|s| s.0).collect::<Vec<_>>();
                 // for p in pos {
