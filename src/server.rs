@@ -16,13 +16,15 @@ pub static COMMANDS: [&str; 65] = ["return", "advancement", "attribute", "bossba
 static mut WARNINGS: Vec<String> = vec![];
 pub static mut SUPPRESS_WARNINGS: bool = false;
 pub static mut KNOWN_FUNCTIONS: Vec<String> = vec![];
-pub static mut HIT_ERROR: bool = false;
+pub static mut EXPORT_FUNCTIONS: Vec<String> = vec![];
+pub static mut HIT_ERROR: i32 = 0;
 
 pub mod errors {
     pub const UNKNOWN_ERROR: i32 = -86;
     pub const BAD_CLI_ARGS: i32 = 10;
     pub const TOO_MANY_ERRORS: i32 = 20;
     pub const NO_PACK_MSK: i32 = 30;
+    pub const IMPORT_NOT_FOUND: i32 = 40;
 }
 
 pub fn print_warnings(pack: &Datapack) {
@@ -85,7 +87,7 @@ pub fn death_error_type(message: String, etype: i32) -> ! {
 }
 
 pub fn error(message: String) {
-    unsafe { HIT_ERROR = true }
+    unsafe { HIT_ERROR += 1 }
     eprintln!("{}", join!("⮾   [", &*"Error".form_foreground(String::RED).form_italic().form_bold(), "] ", &*message));
 }
 
@@ -116,21 +118,22 @@ macro_rules! qc {
 }
 
 pub trait FancyText: ToString {
-    const GRY: usize = 0;
     //ignore
-    const RED: usize = 1;
+    const GRY: usize = 0;
     //errors
-    const GRN: usize = 2;
+    const RED: usize = 1;
     //good stuff
-    const ORN: usize = 3;
+    const GRN: usize = 2;
     //warns
-    const BLU: usize = 4;
+    const ORN: usize = 3;
     //names
-    const PNK: usize = 5;
+    const BLU: usize = 4;
     //ns
-    const AQU: usize = 6;
+    const PNK: usize = 5;
     //debug
-    const WHT: usize = 7; //unused
+    const AQU: usize = 6;
+    //unused
+    const WHT: usize = 7; 
 
     fn form_bold(&self) -> String {
         join!("\x1b[1m", &*self.to_string(), "\x1b[m")
@@ -202,9 +205,10 @@ pub(crate) fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::
     Ok(())
 }
 
+#[derive(Debug)]
 pub struct MFile {
-    path: String,
-    file: File,
+    pub path: String,
+    pub file: File,
 }
 
 impl MFile {
@@ -269,19 +273,19 @@ pub fn path_without_functions(path: String) -> String {
     }
 }
 
-pub fn get_cli_args() -> (String, Option<String>, bool) {
+pub fn get_cli_args() -> (String, Option<String>, bool, bool) {
     let mut args = env::args().collect::<Vec<String>>().into_iter();
     args.next();
 
     let mut pck;
-    let (mut mov, mut clr) = (None, false);
+    let (mut mov, mut clr, mut exp) = (None, false, false);
     match &*args.next().unwrap_or_else(|| {
         status_color("No pack specified".into(), str::RED);
         "-h".into()
     }) {
         "-h" | "--help" | "?" => {
             print_help();
-            std::process::exit(0);
+            exit(0);
         }
         p @ _ => {
             pck = p.into();
@@ -296,9 +300,10 @@ pub fn get_cli_args() -> (String, Option<String>, bool) {
             "--pack" | "-p" => pck = args.next().unwrap_or("".to_string()),
             "--move" | "-m" => mov = args.next(),
             "--clear" | "-c" => clr = true,
+            "--export" | "-e" => exp = true,
             _ => {
                 status_color(join!("Unknown arg '", &*arg, "'"), str::RED);
-                std::process::exit(errors::BAD_CLI_ARGS);
+                exit(errors::BAD_CLI_ARGS);
             }
         }
     }
@@ -308,14 +313,15 @@ pub fn get_cli_args() -> (String, Option<String>, bool) {
         exit(errors::BAD_CLI_ARGS);
     }
 
-    (pck, mov, clr)
+    (pck, mov, clr, exp)
 }
 
 fn print_help() {
     println!("Usage: mitsuko <pack_location> [options]\n\t{}\n", &*[
         "(-h | --help | ?)", "\tDisplay this message",
         "(-m | --move) <locations>", "\tMove the compiled pack to <location>/datapacks",
-        "(-c | --clear)", "\tRemove the old datapack at <location>/datapacks"
+        "(-c | --clear)", "\tRemove the old datapack at <location>/datapacks",
+        "(-e | --export)", "\tEnable creation of export file"
     ].join("\n\t"));
 }
 

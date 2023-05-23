@@ -192,6 +192,7 @@ pub fn replacements(text: &String, node: &Node, mcf: &mut MCFunction, ln: usize)
         .replace("*{INT_MIN}", "-2147483648")
         .replace("*{PATH}", &*mcf.get_file_loc())
         .replace("*{NEAR1}", "limit=1,sort=nearest")
+        .replace("*{SB}", "\\u00a7")
         .replace("*{LN}", &*(node.ln + ln).to_string());
     parse_json_all(&mut text, mcf, node.ln + ln);
     text

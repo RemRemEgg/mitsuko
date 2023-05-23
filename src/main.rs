@@ -19,15 +19,14 @@ use server::get_cli_args;
 
 static CURRENT_PACK_VERSION: u8 = 13;
 static mut SRC: String = String::new();
-//todo inline tagging
-//todo exports
 //todo marcos?
+
 fn main() {
     let mut times = (Instant::now(), Instant::now(), Instant::now(), Instant::now());
     println!();
     status_color(env::args().collect::<Vec<String>>()[1..].join(" "), str::GRY);
 
-    let (path, mov, clear) = get_cli_args();
+    let (path, mov, clear, export) = get_cli_args();
 
     let mut data = Datapack::new(path);
 
@@ -59,13 +58,16 @@ fn main() {
     if mov.is_some() {
         data.move_clear(mov, clear);
     }
+    if export {
+        data.export();
+    }
     stop_if_errors();
 
     times.0 += times.1.elapsed();
     times.1 += times.2.elapsed();
     times.2 += times.3.elapsed();
     times.3 += Instant::now().elapsed();
-    
+
     print_warnings(&data);
 
     status(format!("{} \x1b[96m\x1b[3m[{}/{}/{}/{} ms (s/r/c/w)]\x1b[m", "Done".form_foreground(str::GRN),
@@ -73,9 +75,11 @@ fn main() {
 }
 
 fn stop_if_errors() {
-    if unsafe { HIT_ERROR } {
-        status_color("Aborting due to previous errors".into(), str::RED);
-        exit(errors::TOO_MANY_ERRORS);
+    unsafe {
+        if HIT_ERROR != 0 {
+            status_color("Aborting due to previous errors [".to_string() + &*HIT_ERROR.to_string() + "]", str::RED);
+            exit(errors::TOO_MANY_ERRORS);
+        }
     }
 }
 

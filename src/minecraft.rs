@@ -1,8 +1,9 @@
 // craftmine ong :krill:
 
-use std::cmp::min;
+use std::cmp::{min, Ordering};
 use std::fs::{DirEntry, File, read_dir, ReadDir, remove_dir_all};
 use std::io::Write;
+use std::path::Path;
 use std::time::Instant;
 use crate::{*, server::*};
 use crate::compile::require;
@@ -40,9 +41,23 @@ impl Datapack {
         let tags = pack.split("\n").collect::<Vec<&str>>();
 
         for tag in tags {
-            let s = tag.split("=").collect::<Vec<&str>>();
+            if tag.trim().is_empty() { continue; }
+            if tag.starts_with("use ") {
+                self.import(&tag[4..]);
+                continue;
+            }
+            let s = tag.trim().split("=").collect::<Vec<&str>>();
             self.meta.set_property(s[0].trim(), s[1].trim(), true, ("pack".into(), self.ln));
             self.ln += 1;
+        }
+    }
+
+    fn import(&self, name: &str) {
+        unsafe {
+            let import = fs::read_to_string(join!["./imports/", name, ".export.msk"]).unwrap_or_else(|e| {
+                death_error_type(join!("Could not read '",&*join!["./imports/", name, ".export.msk"].form_foreground(str::ORN),"' (", &*e.to_string(), ")"), errors::IMPORT_NOT_FOUND);
+            });
+            KNOWN_FUNCTIONS.append(&mut import.split(",").map(|s| s.to_string()).collect());
         }
     }
 
@@ -70,6 +85,9 @@ impl Datapack {
     }
 
     pub fn compile_namespaces(&mut self) {
+        for i in 0..self.namespaces.len() {
+            self.namespaces[i].build();
+        }
         for i in 0..self.namespaces.len() {
             self.namespaces[i].compile();
         }
@@ -119,7 +137,7 @@ impl Datapack {
                         KNOWN_FUNCTIONS.contains(&qc!(flink.contains(":"), flink.to_string(), join![&*ns.id, ":", &**flink]))
                     }) {
                         warn(format_out(&*join!["No such function '", &*flink.form_foreground(str::ORN), "' found for link '", &*link.path.form_foreground(str::BLU), "'"],
-                                        &*join!["./src/", &*ns.id, "/event_links/", &*link.path], link.ln));
+                                        &*join![&*ns.id, "/event_links/", &*link.path], link.ln));
                         false
                     } else {
                         true
@@ -155,6 +173,13 @@ impl Datapack {
                 &*world.replace("\\", "/").form_underline().form_foreground(str::GRY)
             ), str::GRY);
             copy_dir_all(self.root(""), world).expect(&*"Failed to copy datapack".form_foreground(str::RED));
+        }
+    }
+
+    pub fn export(&self) {
+        unsafe {
+            let mut file = MFile::new(self.get_dir(&*join!["/", &*self.meta.view_name, ".export.msk"]));
+            file.save(EXPORT_FUNCTIONS.join(","));
         }
     }
 }
@@ -284,25 +309,28 @@ impl Namespace {
         read_src(join!["/", &*self.id, &*loc.to_string()])
     }
 
-    fn compile(&mut self) {
+    fn build(&mut self) {
         let mut files = self.loaded_files.take().unwrap();
-
         for (file, lines) in files[1].iter_mut() {
             self.process_link_file(file, lines)
         }
-
         for (file, lines) in files[0].iter_mut() {
             MCFunction::process_function_file(self, file, lines)
         }
-        for function in self.functions.iter_mut() {
-            function.compile();
-            unsafe {
-                KNOWN_FUNCTIONS.push(join![&*self.id, ":", &*function.get_path().trim_start_matches("/").to_string()]);
-            }
-        }
-
         for (file, lines) in files[2].iter_mut() {
             self.process_item_file(file, lines)
+        }
+        for function in self.functions.iter_mut() {
+            unsafe {
+                KNOWN_FUNCTIONS.push(join![&*self.id, ":", &*function.get_path().trim_start_matches("/").to_string()]);
+                EXPORT_FUNCTIONS.push(join![&*self.id, ":", &*function.get_path().trim_start_matches("/").to_string()]);
+            }
+        }
+    }
+
+    fn compile(&mut self) {
+        for function in self.functions.iter_mut() {
+            function.compile();
         }
     }
 
@@ -315,17 +343,19 @@ impl Namespace {
             if line.len() < 2 {
                 warn(format_out("Not enough arguments to link", &*[&*self.id, "event_links", &*file].join("/"), ln + 1));
             } else {
-                let links = line[1].trim().replace(" ", "");
-                let links = links.split(",").filter(|l| !l.eq(&"none"))
-                    .map(|f| qc!(MCFunction::is_valid_fn(&*join![f, "()"]), f, "§").to_string())
+                let line_link_functions = line[1].trim().replace(" ", "");
+                let line_link_functions = line_link_functions.split(",")
+                    .map(|f| qc!(MCFunction::is_valid_fn(&*join![f, "()"]), f, {
+                        warn(format_out(&*join!["Invalid function name: '", f, "'"], &*[&*self.id, "event_links", &*file].join("/"), ln + 1));
+                        "§"}).to_string())
+                    .filter(|l| !l.eq(&"none"))
                     .filter(|f| !f.eq("§"))
                     .collect::<Vec<_>>();
                 unsafe {
-                    links.iter().for_each(|f| {
-                        KNOWN_FUNCTIONS.push(join!["#", &*file, ":", line[0]]);
-                    });
+                    KNOWN_FUNCTIONS.push(join!["#", &*file, ":", line[0]]);
+                    EXPORT_FUNCTIONS.push(join!["#", &*file, ":", line[0]]);
                 }
-                lks.push(Link::new(file.clone(), line[0].to_string(), links, ln));
+                lks.push(Link::new(file.clone(), line[0].to_string(), line_link_functions, ln));
             }
         }
         self.links.append(&mut lks);
@@ -334,7 +364,7 @@ impl Namespace {
     fn process_item_file(&mut self, file: &mut String, lines: &mut Vec<String>) {
         qc!(self.meta.vb > 0, status(join!["Processing item file '", &*file.form_foreground(str::BLU), "'"]), ());
         let mut item = Item::new(file, lines, self);
-        item.function.compile();
+        // item.function.compile();
         self.functions.push(item.function.clone());
         self.items.push(item);
     }
@@ -395,6 +425,7 @@ pub struct MCFunction {
 
 impl MCFunction {
     fn process_function_file(ns: &mut Namespace, file: &mut String, mut lines: &mut Vec<String>) {
+        let meta = ns.meta.clone();
         qc!(ns.meta.vb > 0, status(join!["Processing function file '", &*file.form_foreground(str::BLU), "'"]), ());
         let mut fns = vec![];
         let mut ln = 1usize;
@@ -407,6 +438,7 @@ impl MCFunction {
             *lines = lines[remove..].to_vec();
             if let Some(gn) = optfn {
                 fns.push(gn);
+                ns.meta = meta.clone();
             }
         }
         ns.functions.append(&mut fns);
@@ -432,9 +464,54 @@ impl MCFunction {
                 rem = res.0;
                 optfn = Some(res.1);
             }
-            _ => rem = 1,//scan_pack_char(line, file),
+            _ => rem = MCFunction::scan_pack_char(file, &lines[0], ns, ln),
         }
         (rem, optfn)
+    }
+
+    fn scan_pack_char(file: &String, line: &String, ns: &mut Namespace, ln: usize) -> usize {
+        let rem: usize = 1;
+        let char_1: char = *line
+            .trim()
+            .chars()
+            .collect::<Vec<_>>()
+            .get(0)
+            .unwrap_or(&'◙');
+        match char_1 {
+            '#' => MCFunction::test_tag(file, line, ns, ln),
+            '/' | '◙' | ' ' | '@' => {}
+            c @ _ => error(format_out(
+                &*join!["Unexpected token '", &*c.form_foreground(str::ORN), "'"],
+                &*ns.extend_path(&*file), ln)),
+        }
+        rem
+    }
+
+    fn test_tag(mut file: &String, line: &String, ns: &mut Namespace, ln: usize) {
+        println!("TESTING {}", line);
+        let mut line = line.trim();
+        let (mut prop, mut value) = ("error", "");
+        let malformed = || error(format_out(
+            &*join!["Malformed argument tag \'", &*line.form_foreground(str::ORN), "\'"],
+            &*ns.extend_path(&*file), ln));
+        if {
+            if line.starts_with("#[") && line.ends_with("]") {
+                line = &line[2..line.len() - 1];
+                let p = line.split_once("=").unwrap_or_else(|| {
+                    malformed();
+                    ("error", "")
+                });
+                if p.0.eq("error") {
+                    return;
+                }
+                (prop, value) = (p.0.trim(), p.1.trim());
+                true
+            } else { false }
+        } {
+            ns.meta.set_property(prop, value, false, (ns.extend_path(&*file), ln));
+        } else {
+            malformed();
+        }
     }
 
     pub fn is_valid_fn(function: &str) -> bool {
@@ -544,7 +621,8 @@ impl MCFunction {
             (ch >= 'a' && ch <= 'z') ||
                 (ch >= 'A' && ch <= 'Z') ||
                 (ch >= '0' && ch <= '9') ||
-                (ch == '_'));
+                (ch == '_') ||
+                (ch == '.'));
         return nb.len() == 0;
     }
 
@@ -679,7 +757,7 @@ pub struct Link {
     path: String,
     name: String,
     functions: Vec<String>,
-    ln: usize
+    ln: usize,
 }
 
 impl Link {
@@ -688,7 +766,7 @@ impl Link {
             path,
             name,
             functions: links,
-            ln
+            ln,
         }
     }
 }
