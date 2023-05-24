@@ -11,7 +11,7 @@ pub fn node_text(node: &mut Node, mcf: &mut MCFunction) {
     }
     match &node.node {
         Command => {
-            let mut keys = Blocker::new().split_in_same_level(" ", &node.lines[0]);
+            let keys = Blocker::new().split_in_same_level(" ", &node.lines[0]);
             if let Err(e) = keys {
                 error(format_out(&*e, &*mcf.get_file_loc(), node.ln));
                 return;
@@ -57,7 +57,7 @@ pub fn node_text(node: &mut Node, mcf: &mut MCFunction) {
                         node.lines = vec![join!["scoreboard players set @s remgine.rmm ", &*power.to_string()], cmd];
                     };
                 }
-                mut f @ _ => {
+                f @ _ => {
                     if !f.is_empty() && !COMMANDS.contains(&f) {
                         warn(format_out(&*join!["Unknown command '", f, "'"], &*mcf.get_file_loc(), node.ln))
                     } else {
@@ -72,7 +72,7 @@ pub fn node_text(node: &mut Node, mcf: &mut MCFunction) {
                 error(format_out(&*e, &*mcf.get_file_loc(), node.ln));
                 return;
             }
-            let mut keys = keys.unwrap();
+            let keys = keys.unwrap();
             node.lines = MCFunction::compile_score_command(&keys, mcf, node.ln);
         }
         FnCall(path) => {
@@ -82,7 +82,7 @@ pub fn node_text(node: &mut Node, mcf: &mut MCFunction) {
                 }
             }
         }
-        NodeType::None | NodeType::EOF => {
+        None => {
             node.lines = vec![];
         }
         _ => {}
@@ -105,7 +105,7 @@ pub fn node_execute(node: &mut Node, keys: &mut Vec<String>, mcf: &mut MCFunctio
                 let ilifs = ilifs[(1 + inverse as usize)..ilifs.len() - 1].to_string();
                 if let Ok(conds) = Blocker::new().split_in_same_level(" && ", &ilifs) {
                     keys[i] = conds.into_iter().map(|cond| node_condition(node, cond, mcf))
-                        .enumerate().map(|(idx, (ccon, isif))| -> String {
+                        .enumerate().map(|(_, (ccon, isif))| -> String {
                         join![qc!(isif != inverse, "if ", "unless "), &*ccon]
                     }).collect::<Vec<_>>().join(" ");
                 } else {
@@ -121,12 +121,12 @@ pub fn node_execute(node: &mut Node, keys: &mut Vec<String>, mcf: &mut MCFunctio
 pub fn node_condition(node: &mut Node, mut cond: String, mcf: &mut MCFunction) -> (String, bool) {
     let isif = !cond.starts_with('!');
     qc!(!isif, cond.remove(0), 'w');
-    let mut keys = Blocker::new().split_in_same_level(" ", &cond);
+    let keys = Blocker::new().split_in_same_level(" ", &cond);
     if let Err(e) = keys {
         error(format_out(&*e, &*mcf.get_file_loc(), node.ln));
         return (cond, isif);
     }
-    let mut keys = keys.unwrap();
+    let keys = keys.unwrap();
     require::min_args(1, &keys, mcf, node.ln);
     match &*keys[0] {
         "random" if require::remgine("random", mcf, node.ln) &&
@@ -141,7 +141,7 @@ pub fn node_condition(node: &mut Node, mut cond: String, mcf: &mut MCFunction) -
                 cond = join!["score ", &*target, " matches ", &*keys[2]];
                 return (cond, isif);
             }
-            let mut target2 = MCValue::new(&keys[2], mcf, node.ln);
+            let target2 = MCValue::new(&keys[2], mcf, node.ln);
             match &*keys[1] {
                 ">=" | ">" | "=" | "<" | "<=" if !target2.is_number() => {
                     cond = join!["score ", &*target, " ", &*keys[1], " ", &*target2.get()];
@@ -205,8 +205,8 @@ fn parse_json_all(text: &mut String, mcf: &mut MCFunction, ln: usize) {
         if let Ok(out) = Blocker::new().find_size(text, p + 5) {
             let options = text[(p + 6)..out - 1].to_string();
             let (options, content) = options.split_once(" :: ").unwrap_or(("text", &*options));
-            let mut options = options.split(" ").collect::<Vec<_>>();
-            let mut json = options.first().unwrap_or(&"text").clone();
+            let options = options.split(" ").collect::<Vec<_>>();
+            let json = options.first().unwrap_or(&"text").clone();
             let mut data = JSONData::new();
             for (idx, mut opt) in options.into_iter().enumerate() {
                 let mut set = true;
@@ -224,7 +224,7 @@ fn parse_json_all(text: &mut String, mcf: &mut MCFunction, ln: usize) {
                     _ => {}
                 }
             }
-            let mut json = match json {
+            let json = match json {
                 "score" => { Score(data, MCFunction::compile_score_path(&content.into(), mcf, ln)) }
                 "custom" => { Custom(data, content.to_string()) }
                 "nbt" => { NBT(data, content.to_string()) }
@@ -355,7 +355,7 @@ pub fn replace_local_tags(keys: &mut Vec<String>, mcf: &mut MCFunction) {
 }
 
 pub mod require {
-    use std::fmt::{Debug, Display};
+    use std::fmt::Display;
     use crate::{error, format_out, join, MCFunction};
     use crate::server::FancyText;
 

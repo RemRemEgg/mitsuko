@@ -177,7 +177,7 @@ pub static MAT_TAG_TEMPLATE: &str = r#""$ID$": {"tag": "minecraft:$TYPE$"}"#;
 
 pub static mut DATAROOT: String = String::new();
 
-pub fn read_src<T: ToString>(loc: T) -> std::io::Result<ReadDir> {
+pub fn read_src<T: ToString>(loc: T) -> io::Result<ReadDir> {
     read_dir(get_src_dir(loc))
 }
 
@@ -220,7 +220,7 @@ impl MFile {
         }
     }
 
-    pub fn save<T: ToString>(mut self, mut write: T) {
+    pub fn save<T: ToString>(mut self, write: T) {
         self.file.write_all(write.to_string().as_bytes())
             .expect(&*join!["Could not make '\x1b[93m", &*self.path, "\x1b[m'"]);
     }
@@ -261,7 +261,7 @@ fn direntry_to_name_loc(dir: &DirEntry, offset: usize) -> String {
     let text_path = dir.path();
     let text_path = text_path.iter().collect::<Vec<_>>();
     let text_path = text_path.get((text_path.len() - offset - 1)..).unwrap().join(OsStr::new("/"));
-    let mut text_path = text_path.to_str().unwrap().to_string().replace(".msk", "");
+    let text_path = text_path.to_str().unwrap().to_string().replace(".msk", "");
     text_path
 }
 
@@ -277,7 +277,7 @@ pub fn get_cli_args() -> (String, Option<String>, bool, bool) {
     let mut args = env::args().collect::<Vec<String>>().into_iter();
     args.next();
 
-    let mut pck;
+    let pck;
     let (mut mov, mut clr, mut exp) = (None, false, false);
     match &*args.next().unwrap_or_else(|| {
         status_color("No pack specified".into(), str::RED);
@@ -297,7 +297,6 @@ pub fn get_cli_args() -> (String, Option<String>, bool, bool) {
             "--help" | "-h" | "?" => {
                 print_help();
             }
-            "--pack" | "-p" => pck = args.next().unwrap_or("".to_string()),
             "--move" | "-m" => mov = args.next(),
             "--clear" | "-c" => clr = true,
             "--export" | "-e" => exp = true,
@@ -338,12 +337,6 @@ impl Blocker {
             stack: Vec::new(),
             string: false,
         }
-    }
-
-    pub fn reset(&mut self) -> &mut Blocker {
-        self.stack.clear();
-        self.string = false;
-        self
     }
 
     // pub fn find_rapid_close(&mut self, lines: &Vec<String>, closer: char) -> Result<usize, String> {

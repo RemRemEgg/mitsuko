@@ -8,10 +8,8 @@ mod minecraft;
 mod compile;
 
 use std::{env, fs};
-use std::alloc::System;
-use std::ops::SubAssign;
 use std::process::exit;
-use std::time::Instant;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use server::*;
 use ast::*;
 use minecraft::*;
@@ -19,12 +17,14 @@ use server::get_cli_args;
 
 static CURRENT_PACK_VERSION: u8 = 13;
 static mut SRC: String = String::new();
-//todo marcos?
+static MITSUKO: &str = include_str!("mitsuko.txt");
 
 fn main() {
     let mut times = (Instant::now(), Instant::now(), Instant::now(), Instant::now());
     println!();
-    status_color(env::args().collect::<Vec<String>>()[1..].join(" "), str::GRY);
+    let msgs = MITSUKO.split("\n").collect::<Vec<_>>();
+    let msg = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(Duration::from_millis(0)).as_micros() as usize % msgs.len();
+    status(join![&*join!["[Mitsuko: ", msgs[msg].trim(), "]"].form_background(str::GRY), " ", &*env::args().collect::<Vec<String>>()[1..].join(" ").form_foreground(str::GRY)]);
 
     let (path, mov, clear, export) = get_cli_args();
 

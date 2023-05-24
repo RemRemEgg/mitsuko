@@ -1,14 +1,12 @@
 // i prefer painting abstract trees
 
 use std::cmp::min;
-use std::error::Error;
-use std::fmt::{Debug, Formatter};
-use std::process::Termination;
-use std::slice::Iter;
-use crate::{death_error, error, format_out, join, MCFunction, MCValue, Namespace, qc, SaveFiles, compile, COMMANDS, warn};
+use std::fmt::Debug;
+
+use crate::{compile, death_error, error, format_out, join, MCFunction, qc, SaveFiles};
 use crate::compile::require;
-use crate::NodeType::{Block, Command, Comment, FnCall, Scoreboard};
-use crate::server::{Blocker, FancyText, path_without_functions};
+use crate::NodeType::{Command, Comment, FnCall, Scoreboard};
+use crate::server::Blocker;
 
 #[derive(Debug, Clone)]
 pub struct Node {
@@ -22,7 +20,6 @@ pub struct Node {
 pub enum NodeType {
     None,
     Root,
-    EOF,
 
     Command,
     Scoreboard,
@@ -59,39 +56,19 @@ impl Node {
         }
     }
 
-    pub fn append_children(&mut self, childs: &mut Vec<Node>) {
-        self.children.append(childs);
-    }
-
-    pub fn get_first_child(&self) -> Option<&Node> {
-        self.children.get(0)
-    }
-
-    pub fn get_last_child(&self) -> Option<&Node> {
-        self.children.get(self.children.len() - 1)
-    }
-
-    pub fn get_child(&self, idx: usize) -> Option<&Node> {
-        self.children.get(idx)
-    }
-
-    pub fn get_children(&self) -> Iter<Node> {
-        self.children.iter()
-    }
-
     pub fn get_save_files(&mut self, files: &mut SaveFiles, lines: &mut Vec<String>, mcf: &mut MCFunction) {
         use crate::NodeType::*;
         match &self.node {
             Root => {
                 // self.print_tree(0);
-                self.children.iter_mut().for_each(|mut c| {
+                self.children.iter_mut().for_each(|c| {
                     c.get_save_files(files, lines, mcf);
                 });
                 self.add_to_files(files, mcf.get_path(), lines, mcf);
             }
             Block(id) => {
                 let mut blines = vec![];
-                self.children.iter_mut().for_each(|mut c| {
+                self.children.iter_mut().for_each(|c| {
                     c.get_save_files(files, &mut blines, mcf);
                 });
                 if id.eq(&'r') {
@@ -110,7 +87,7 @@ impl Node {
 
             Command => {
                 let mut last = vec![];
-                self.children.iter_mut().for_each(|mut c| {
+                self.children.iter_mut().for_each(|c| {
                     c.get_save_files(files, &mut last, mcf);
                 });
                 if !last.is_empty() {
@@ -132,7 +109,7 @@ impl Node {
                 lines.append(&mut self.lines.clone());
             }
 
-            Comment | None | EOF => {}
+            Comment | None => {}
         }
     }
 
@@ -152,13 +129,13 @@ impl Node {
                 compile::node_text(self, mcf);
             }
 
-            None | Comment | EOF => {}
+            None | Comment => {}
         }
         self.generate_children(mcf);
     }
 
     fn generate_children(&mut self, mcf: &mut MCFunction) {
-        self.children.iter_mut().for_each(|mut c| {
+        self.children.iter_mut().for_each(|c| {
             c.generate(mcf);
         });
     }
@@ -177,12 +154,12 @@ impl Node {
             }
             self.lines[0] = compile::replacements(&self.lines[0], self, mcf, ln);
 
-            let (rem, mut nn) = Node::build_from_lines(&mut self.lines, mcf, self.ln + ln);
+            let (rem, nn) = Node::build_from_lines(&mut self.lines, mcf, self.ln + ln);
             for _ in 0..min(rem, self.lines.len()) {
                 self.lines.remove(0);
                 ln += 1;
             }
-            if let Some(mut nnu) = nn {
+            if let Some(nnu) = nn {
                 self.children.push(nnu);
             }
         }
@@ -238,8 +215,8 @@ impl Node {
                     } else {
                         node.lines[0] = node.lines[0][..run + 4].into();
                         lines[0] = lines[0][run + 5..].into();
-                        let (remx, mut nn) = Node::build_from_lines(lines, mcf, node.ln);
-                        if let Some(mut nnu) = nn {
+                        let (remx, nn) = Node::build_from_lines(lines, mcf, node.ln);
+                        if let Some(nnu) = nn {
                             node.children.push(nnu);
                         }
                         rem = remx;
@@ -258,7 +235,7 @@ impl Node {
             }
             "repeat" if require::exact_args(3, &keys, mcf, ln) => {
                 let (remx, mut nna) = Node::build_extract_block(lines, &mut node, mcf, 'r');
-                nna.lines.insert(0, join!["cmd ", &*keys[1].parse::<u32>().unwrap_or_else(|e| {
+                nna.lines.insert(0, join!["cmd ", &*keys[1].parse::<u32>().unwrap_or_else(|_| {
                     error(format_out(&*join!["Failed to parse '", &*keys[1], "' to a number"],
                                      &*mcf.get_file_loc(), ln));
                     1
@@ -269,6 +246,11 @@ impl Node {
                 qc!(keys.len() > 2, keys.insert(2, "run".into()), ());
                 lines[0] = join!["execute ", &*keys.join(" ")];
                 return Node::build_from_lines(lines, mcf, ln);
+            }
+            "tag" if keys.len() > 3 => {
+                keys[3] = keys[3].replace("r&", "remgine.").replace("&", &*join![&*mcf.ns_id, "."]);
+                node.node = Command;
+                node.lines = vec![keys.join(" ")];
             }
             _ if MCFunction::is_score_path(&keys[0], mcf, ln) => {
                 node.node = Scoreboard;

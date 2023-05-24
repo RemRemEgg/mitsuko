@@ -1,20 +1,15 @@
 // craftmine ong :krill:
 
-use std::cmp::{min, Ordering};
-use std::fs::{DirEntry, File, read_dir, ReadDir, remove_dir_all};
-use std::io::Write;
-use std::path::Path;
-use std::time::Instant;
+use std::cmp::min;
+use std::fs::{DirEntry, read_dir, ReadDir, remove_dir_all};
 use crate::{*, server::*};
 use crate::compile::require;
-use crate::NodeType::Block;
 
 pub struct Datapack {
     meta: Meta,
     ln: usize,
     pub namespaces: Vec<Namespace>,
     pub src_loc: String,
-    callable_functions: Vec<String>,
 }
 
 impl Datapack {
@@ -28,7 +23,6 @@ impl Datapack {
             ln: 1,
             src_loc: path,
             namespaces: vec![],
-            callable_functions: vec![],
         }
     }
 
@@ -79,7 +73,7 @@ impl Datapack {
         } else {
             warn("No namespaces found".to_string());
         }
-        status(join!["Loaded ", &*self.namespaces.len().to_string(), " namespaces ", 
+        status(join!["Loaded ", &*self.namespaces.len().to_string().form_foreground(str::GRN), " namespaces ", 
             &*join!["['", &*self.namespaces.iter().map(|n|n.id.clone()).collect::<Vec<String>>()
                 .join("\', \'"), "']"].form_foreground(str::GRY)])
     }
@@ -148,7 +142,7 @@ impl Datapack {
         });
 
         for link in links.into_iter() {
-            let mut file = MFile::new(self.data(&*join![&*link.path, "/tags/functions/", &*link.name, ".json"]));
+            let file = MFile::new(self.data(&*join![&*link.path, "/tags/functions/", &*link.name, ".json"]));
             let write = link.functions.clone().into_iter().map(|s| join!["\"", &*s, "\""]).collect::<Vec<String>>();
             file.save(TAG_TEMPLATE.replace("$VALUES$", &*write.join(",\n    ")));
         }
@@ -166,19 +160,19 @@ impl Datapack {
                     warn(join!["Could not clear pre-existing datapack (", &*t.unwrap_err().to_string(), ")"].form_foreground(str::RED));
                 }
             }
-            status_color(format!(
+            status(format!(
                 "Copying {} {} {}",
                 join!["./", &*self.root("").replace("\\", "/")].form_underline(),
                 "to".form_foreground(str::GRY),
                 &*world.replace("\\", "/").form_underline().form_foreground(str::GRY)
-            ), str::GRY);
+            ));
             copy_dir_all(self.root(""), world).expect(&*"Failed to copy datapack".form_foreground(str::RED));
         }
     }
 
     pub fn export(&self) {
         unsafe {
-            let mut file = MFile::new(self.get_dir(&*join!["/", &*self.meta.view_name, ".export.msk"]));
+            let file = MFile::new(self.get_dir(&*join!["/", &*self.meta.view_name, ".export.msk"]));
             file.save(EXPORT_FUNCTIONS.join(","));
         }
     }
@@ -261,7 +255,6 @@ pub struct Namespace {
     links: Vec<Link>,
     items: Vec<Item>,
     meta: Meta,
-    ln: usize,
     loaded_files: Option<[MSKFiles; 3]>,
 }
 
@@ -282,7 +275,6 @@ impl Namespace {
             links: Vec::new(),
             items: Vec::new(),
             meta,
-            ln: 0,
             loaded_files: None,
         })
     }
@@ -363,7 +355,7 @@ impl Namespace {
 
     fn process_item_file(&mut self, file: &mut String, lines: &mut Vec<String>) {
         qc!(self.meta.vb > 0, status(join!["Processing item file '", &*file.form_foreground(str::BLU), "'"]), ());
-        let mut item = Item::new(file, lines, self);
+        let item = Item::new(file, lines, self);
         // item.function.compile();
         self.functions.push(item.function.clone());
         self.items.push(item);
@@ -424,7 +416,7 @@ pub struct MCFunction {
 }
 
 impl MCFunction {
-    fn process_function_file(ns: &mut Namespace, file: &mut String, mut lines: &mut Vec<String>) {
+    fn process_function_file(ns: &mut Namespace, file: &mut String, lines: &mut Vec<String>) {
         let meta = ns.meta.clone();
         qc!(ns.meta.vb > 0, status(join!["Processing function file '", &*file.form_foreground(str::BLU), "'"]), ());
         let mut fns = vec![];
@@ -487,7 +479,7 @@ impl MCFunction {
         rem
     }
 
-    fn test_tag(mut file: &String, line: &String, ns: &mut Namespace, ln: usize) {
+    fn test_tag(file: &String, line: &String, ns: &mut Namespace, ln: usize) {
         println!("TESTING {}", line);
         let mut line = line.trim();
         let (mut prop, mut value) = ("error", "");
@@ -515,7 +507,7 @@ impl MCFunction {
     }
 
     pub fn is_valid_fn(function: &str) -> bool {
-        let mut function = function.split_once(":").unwrap_or(("", function)).1;
+        let function = function.split_once(":").unwrap_or(("", function)).1;
         if function.len() < 3 {
             return false;
         }
@@ -572,7 +564,7 @@ impl MCFunction {
     fn new(mut path: String, mut call_name: String, ln: usize, ns: &Namespace) -> MCFunction {
         let file_path = path.clone();
         if call_name.contains("/") {
-            let mut v = call_name.rsplit_once("/").unwrap_or(("error", "error"));
+            let v = call_name.rsplit_once("/").unwrap_or(("error", "error"));
             path.push('/');
             path.push_str(v.0);
             call_name = v.1.to_string();
