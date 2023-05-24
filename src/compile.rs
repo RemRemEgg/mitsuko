@@ -1,0 +1,390 @@
+// bob the builder??? in this filesystem???
+
+use crate::{Blocker, error, format_out, join, MCFunction, MCValue, Node, NodeType, qc};
+use crate::compile::JSON::*;
+use crate::server::*;
+
+pub fn node_text(node: &mut Node, mcf: &mut MCFunction) {
+    use NodeType::*;
+    if node.lines.len() == 0 {
+        return;
+    }
+    match &node.node {
+        Command => {
+            let keys = Blocker::new().split_in_same_level(" ", &node.lines[0]);
+            if let Err(e) = keys {
+                error(format_out(&*e, &*mcf.get_file_loc(), node.ln));
+                return;
+            }
+            let mut keys = keys.unwrap();
+            replace_local_tags(&mut keys, mcf);
+            match &*keys[0] {
+                "cmd" => {
+                    node.lines = vec![keys.get(1..).unwrap_or(&[String::new()]).join(" ")];
+                }
+                "execute" => {
+                    node_execute(node, &mut keys, mcf);
+                }
+                "create" => {
+                    if keys.len() == 2 {
+                        keys.push("dummy".into());
+                    }
+                    if keys[1].starts_with("&") {
+                        keys[1].replace_range(0..1, ".");
+                        keys[1].replace_range(0..0, &*mcf.ns_id);
+                    }
+                    node.lines[0] = join!["scoreboard objectives add ", &*keys[1..].join(" ")];
+                }
+                "remove" => {
+                    if keys[1].starts_with("&") {
+                        keys[1].replace_range(0..1, ".");
+                        keys[1].replace_range(0..0, &*mcf.ns_id);
+                    }
+                    node.lines[0] = join!["scoreboard objectives remove ", &*keys[1]];
+                }
+                "rmm" if require::remgine("rmm", mcf, node.ln) => {
+                    let cmd = "function remgine:utils/rmm".to_string();
+                    if keys.len() == 1 {
+                        return {
+                            node.lines = vec![cmd];
+                        };
+                    }
+                    return if keys[1].eq("set") && require::exact_args(4, &keys, mcf, node.ln) {
+                        let power = keys[3].parse::<i8>().unwrap_or(0);
+                        node.lines = vec![join!["scoreboard players set ", &*keys[2], " remgine.rmm ", &*power.to_string()]];
+                    } else {
+                        let power = keys[1].parse::<i8>().unwrap_or(0);
+                        node.lines = vec![join!["scoreboard players set @s remgine.rmm ", &*power.to_string()], cmd];
+                    };
+                }
+                f @ _ => {
+                    if !f.is_empty() && !COMMANDS.contains(&f) {
+                        warn(format_out(&*join!["Unknown command '", f, "'"], &*mcf.get_file_loc(), node.ln))
+                    } else {
+                        node.lines[0] = keys.join(" ");
+                    }
+                }
+            }
+        }
+        Scoreboard => {
+            let keys = Blocker::new().split_in_same_level(" ", &node.lines[0]);
+            if let Err(e) = keys {
+                error(format_out(&*e, &*mcf.get_file_loc(), node.ln));
+                return;
+            }
+            let keys = keys.unwrap();
+            node.lines = MCFunction::compile_score_command(&keys, mcf, node.ln);
+        }
+        FnCall(path) => {
+            unsafe {
+                if !KNOWN_FUNCTIONS.contains(path) {
+                    warn(format_out(&*join!["Unknown function '", &*path.form_foreground(str::ORN), "'"], &*mcf.get_file_loc(), node.ln));
+                }
+            }
+        }
+        None => {
+            node.lines = vec![];
+        }
+        _ => {}
+    }
+}
+
+pub fn node_execute(node: &mut Node, keys: &mut Vec<String>, mcf: &mut MCFunction) {
+    for i in 0.. {
+        if i >= keys.len() {
+            break;
+        }
+        match &*keys[i] {
+            "ast" if require::min_args(2, &keys[i..].to_vec(), mcf, node.ln) => {
+                keys[i] = "as".into();
+                keys[i + 1].push_str(" at @s");
+            }
+            "if" if keys[i + 1].starts_with("(") || keys[i + 1].starts_with("!(") => {
+                let inverse = keys[i + 1].starts_with("!(");
+                let ilifs = keys.remove(i + 1);
+                let ilifs = ilifs[(1 + inverse as usize)..ilifs.len() - 1].to_string();
+                if let Ok(conds) = Blocker::new().split_in_same_level(" && ", &ilifs) {
+                    keys[i] = conds.into_iter().map(|cond| node_condition(node, cond, mcf))
+                        .enumerate().map(|(_, (ccon, isif))| -> String {
+                        join![qc!(isif != inverse, "if ", "unless "), &*ccon]
+                    }).collect::<Vec<_>>().join(" ");
+                } else {
+                    error(format_out("Failed to parse if statement", &*mcf.get_file_loc(), node.ln));
+                }
+            }
+            _ => {}
+        }
+    }
+    node.lines[0] = keys.join(" ");
+}
+
+pub fn node_condition(node: &mut Node, mut cond: String, mcf: &mut MCFunction) -> (String, bool) {
+    let isif = !cond.starts_with('!');
+    qc!(!isif, cond.remove(0), 'w');
+    let keys = Blocker::new().split_in_same_level(" ", &cond);
+    if let Err(e) = keys {
+        error(format_out(&*e, &*mcf.get_file_loc(), node.ln));
+        return (cond, isif);
+    }
+    let keys = keys.unwrap();
+    require::min_args(1, &keys, mcf, node.ln);
+    match &*keys[0] {
+        "random" if require::remgine("random", mcf, node.ln) &&
+            require::min_args(2, &keys, mcf, node.ln) => {
+            cond = join!["predicate remgine:random/", &*keys[1]];
+        }
+        _ if MCFunction::is_score_path(&keys[0], mcf, node.ln) &&
+            require::exact_args(3, &keys, mcf, node.ln) => {
+            let target = MCFunction::compile_score_path(&keys[0], mcf, node.ln).join(" ");
+            if keys[2].contains("..") {
+                require::keyword("=", &keys[1], mcf, node.ln);
+                cond = join!["score ", &*target, " matches ", &*keys[2]];
+                return (cond, isif);
+            }
+            let target2 = MCValue::new(&keys[2], mcf, node.ln);
+            match &*keys[1] {
+                ">=" | ">" | "=" | "<" | "<=" if !target2.is_number() => {
+                    cond = join!["score ", &*target, " ", &*keys[1], " ", &*target2.get()];
+                }
+                ">=" | ">" | "<" | "<=" => {
+                    let gt = keys[1].contains(">");
+                    let eq = keys[1].contains("=");
+                    if let MCValue::Number { mut value } = target2 {
+                        value += qc!(!eq, (gt as i32 * 2) - 1, 0);
+                        cond = join!["score ", &*target, " matches ", qc!(!gt, "..", ""), &*value.to_string(), qc!(gt, "..", "")];
+                    }
+                }
+                "=" => {
+                    cond = join!["score ", &*target, " matches ", &*target2.get()];
+                }
+                _ => {
+                    error(format_out(
+                        &*join!("Failed to parse score test, unknown operation '", &*keys[1].form_foreground(str::BLU), "'"),
+                        &*mcf.get_file_loc(), node.ln));
+                }
+            }
+        }
+        _ => {}
+    }
+    (cond, isif)
+}
+
+pub fn is_fn_call(call: &str, mcf: &mut MCFunction) -> Option<String> {
+    let mut call = call.clone();
+    if call.len() < 2 { return None; };
+    let local = call.starts_with("&");
+    let tag = call.starts_with("#");
+    call = call[(local as usize + tag as usize)..].into();
+    return if MCFunction::is_valid_fn(&*call) {
+        call = call.trim_end_matches("()");
+        let (ns, name) = call.split_once(":").unwrap_or((&*mcf.ns_id, call));
+        let path = qc!(local, crate::path_without_functions(mcf.file_path.clone()), "".into());
+        Some(join![qc!(tag, "#", ""), ns, ":", &*path, qc!(local && path.len() > 0, "/", ""), name])
+    } else {
+        None
+    };
+}
+
+pub fn replacements(text: &String, node: &Node, mcf: &mut MCFunction, ln: usize) -> String {
+    let mut text = text.replace("*{NS}", &*mcf.ns_id)
+        .replace("*{NAME}", &*mcf.meta.view_name)
+        .replace("*{INT_MAX}", "2147483647")
+        .replace("*{INT_MIN}", "-2147483648")
+        .replace("*{PATH}", &*mcf.get_file_loc())
+        .replace("*{NEAR1}", "limit=1,sort=nearest")
+        .replace("*{SB}", "\\u00a7")
+        .replace("*{LN}", &*(node.ln + ln).to_string());
+    parse_json_all(&mut text, mcf, node.ln + ln);
+    text
+}
+
+fn parse_json_all(text: &mut String, mcf: &mut MCFunction, ln: usize) {
+    let mut pos = text.match_indices("*JSON{").map(|s| s.0).collect::<Vec<_>>();
+    pos.reverse();
+    for p in pos {
+        if let Ok(out) = Blocker::new().find_size(text, p + 5) {
+            let options = text[(p + 6)..out - 1].to_string();
+            let (options, content) = options.split_once(" :: ").unwrap_or(("text", &*options));
+            let options = options.split(" ").collect::<Vec<_>>();
+            let json = options.first().unwrap_or(&"text").clone();
+            let mut data = JSONData::new();
+            for (idx, mut opt) in options.into_iter().enumerate() {
+                let mut set = true;
+                if opt.starts_with("!") {
+                    set = false;
+                    opt = &opt[1..];
+                }
+                match opt {
+                    "italic" => data.italic = Some(set),
+                    "bold" => data.bold = Some(set),
+                    "strike" | "strikethrough" => data.strike = Some(set),
+                    "underline" | "underlined" => data.underline = Some(set),
+                    "obfuscated" | "mystify" => data.obfuscated = Some(set),
+                    _ if idx != 0 && data.color.is_none() && !opt.eq("") => data.color = Some(opt.to_string()),
+                    _ => {}
+                }
+            }
+            let json = match json {
+                "score" => { Score(data, MCFunction::compile_score_path(&content.into(), mcf, ln)) }
+                "custom" => { Custom(data, content.to_string()) }
+                "nbt" => { NBT(data, content.to_string()) }
+                _ => { Text(data, content.replace("\\\"", "\\\\\"").replace("\"", "\\\"")) }
+            };
+            text.replace_range(p..out, &*json.to_string());
+        }
+    }
+}
+
+struct JSONData {
+    italic: Option<bool>,
+    bold: Option<bool>,
+    strike: Option<bool>,
+    underline: Option<bool>,
+    obfuscated: Option<bool>,
+    color: Option<String>,
+}
+
+impl JSONData {
+    fn new() -> JSONData {
+        JSONData {
+            italic: None,
+            bold: None,
+            strike: None,
+            underline: None,
+            obfuscated: None,
+            color: None,
+        }
+    }
+
+    fn append_data<'a>(&self, json: &'a mut String) -> &'a mut String {
+        if let Some(b) = self.italic { json.push_str(&*join![r#","italic":""#, &*b.to_string(), "\""]); }
+        if let Some(b) = self.bold { json.push_str(&*join![r#","bold":""#, &*b.to_string(), "\""]); }
+        if let Some(b) = self.strike { json.push_str(&*join![r#","strikethrough":""#, &*b.to_string(), "\""]); }
+        if let Some(b) = self.underline { json.push_str(&*join![r#","underlined":""#, &*b.to_string(), "\""]); }
+        if let Some(b) = self.obfuscated { json.push_str(&*join![r#","obfuscated":""#, &*b.to_string(), "\""]); }
+        if let Some(b) = self.color.clone() { json.push_str(&*join![r#","color":""#, &*b, "\""]); }
+        json
+    }
+}
+
+enum JSON {
+    Text(JSONData, String),
+    Score(JSONData, [String; 2]),
+    Custom(JSONData, String),
+    NBT(JSONData, String),
+}
+
+impl JSON {
+    fn to_string(&self) -> String {
+        match self {
+            Text(data, text) => {
+                let mut json = join![r#"{"text":""#, &*text, "\""];
+                data.append_data(&mut json).push_str("}");
+                json
+            }
+            Score(data, path) => {
+                let mut json = join![r#"{"score":{"name":""#, &*path[0], r#"","objective":""#, &*path[1], "\"}"];
+                data.append_data(&mut json).push_str("}");
+                json
+            }
+            Custom(data, text) => {
+                let mut json = join!["{", &*text];
+                data.append_data(&mut json).push_str("}");
+                json
+            }
+            NBT(data, path) => {
+                let (typ, path) = path.split_once(" ").unwrap_or(("entity", "_ : _"));
+                let (target, path) = path.split_once(" : ").unwrap_or(("_", "_"));
+                let mut json = join![r#"{"nbt":""#, path, r#"",""#, typ, r#"":""#, target, "\""];
+                data.append_data(&mut json).push_str("}");
+                json
+            }
+        }
+    }
+}
+
+pub fn finish_lines(lines: &mut Vec<String>, mcf: &mut MCFunction) {
+    lines.iter_mut().for_each(|line| {
+        qc!(mcf.meta.opt_level >= 1, optimize_line(line), ());
+    });
+}
+
+pub fn optimize_line(line: &mut String) {
+    *line = line.replace(" positioned as @s ", " positioned as @s[] ")
+        .replace(" as @s ", " ")
+        .replace(" @s[] ", " @s ")
+        .replace(" run execute ", " ")
+        .replace("execute run ", "")
+        .replace(" run run ", " run ")
+        .replace("execute execute ", "execute ");
+}
+
+pub fn replace_local_tags(keys: &mut Vec<String>, mcf: &mut MCFunction) {
+    keys.iter_mut().for_each(|key| {
+        if key.len() > 8 && key.starts_with('@') && key.as_bytes()[2] == '[' as u8 && key.ends_with(']') && key.contains("tag") {
+            let b = key[3..key.len() - 1].to_string();
+            if let Ok(options) = Blocker::new().split_in_same_level(",", &b) {
+                let ops = options.into_iter().map(|o| -> String {
+                    let mut t = o.clone();
+                    t.retain(|c| !c.is_whitespace());
+                    if t.starts_with("tag=") && t.contains("&") {
+                        o.replace("r&", "remgine.").replace("&", &*join!(&*mcf.ns_id, "."))
+                    } else {
+                        o
+                    }
+                }).collect::<Vec<String>>();
+                *key = join![&key[0..3], &*ops.join(","), "]"];
+            }
+        }
+        if key.len() > 9 && key.starts_with('{') && key.ends_with('}') && key.contains("Tags:[") {
+            let b = key[1..key.len() - 1].to_string();
+            if let Ok(options) = Blocker::new().split_in_same_level(",", &b) {
+                let ops = options.into_iter().map(|o| -> String {
+                    if o.starts_with("Tags:[") {
+                        if let Ok(mut tags) = Blocker::new().split_in_same_level(",", &o[6..o.len() - 1].to_string()) {
+                            tags.iter_mut().for_each(|t|
+                                *t = t.replace("r&", "remgine.").replace("&", &*join![&*mcf.ns_id, "."]));
+                            join!["Tags:[", &*tags.join(","), "]"]
+                        } else { o }
+                    } else { o }
+                }).collect::<Vec<String>>();
+                *key = ops.join(",");
+            }
+        }
+    });
+}
+
+pub mod require {
+    use std::fmt::Display;
+    use crate::{error, format_out, join, MCFunction};
+    use crate::server::FancyText;
+
+    pub fn min_args<T: Display>(count: usize, keys: &Vec<T>, mcf: &mut MCFunction, ln: usize) -> bool {
+        if keys.len() < count {
+            error(format_out(&*format!("Not enough arguments for '{}' ({} expected, found {})", keys[0], count, keys.len()), &*mcf.get_file_loc(), ln))
+        }
+        keys.len() >= count
+    }
+
+    pub fn exact_args<T: Display>(count: usize, keys: &Vec<T>, mcf: &mut MCFunction, ln: usize) -> bool {
+        if keys.len() != count {
+            error(format_out(&*format!("Wrong number of arguments for '{}' ({} expected, found {})", keys[0], count, keys.len()), &*mcf.get_file_loc(), ln))
+        }
+        keys.len() == count
+    }
+
+    pub fn remgine(item: &str, mcf: &mut MCFunction, ln: usize) -> bool {
+        if !mcf.meta.remgine {
+            error(format_out(&*join!("Remgine is required to use [", &*item.form_foreground(str::AQU), "]"), &*mcf.get_file_loc(), ln))
+        }
+        mcf.meta.remgine
+    }
+
+    pub fn keyword(word: &str, test: &String, mcf: &mut MCFunction, ln: usize) -> bool {
+        if !test.eq(word) {
+            error(format_out(&*format!("Expected keyword '{}' got {}", word, test), &*mcf.get_file_loc(), ln))
+        }
+        test.eq(word)
+    }
+}
+
