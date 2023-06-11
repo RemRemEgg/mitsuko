@@ -15,9 +15,12 @@ use ast::*;
 use minecraft::*;
 use server::get_cli_args;
 
-static CURRENT_PACK_VERSION: u8 = 13;
+static CURRENT_PACK_VERSION: u8 = 15;
 static mut SRC: String = String::new();
 static MITSUKO: &str = include_str!("mitsuko.txt");
+
+//todo add bundling
+//todo -c warns on folder not found
 
 fn main() {
     let mut times = (Instant::now(), Instant::now(), Instant::now(), Instant::now());

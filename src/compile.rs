@@ -126,7 +126,8 @@ pub fn node_condition(node: &mut Node, mut cond: String, mcf: &mut MCFunction) -
         error(format_out(&*e, &*mcf.get_file_loc(), node.ln));
         return (cond, isif);
     }
-    let keys = keys.unwrap();
+    let mut keys = keys.unwrap();
+    replace_local_tags(&mut keys, mcf);
     require::min_args(1, &keys, mcf, node.ln);
     match &*keys[0] {
         "random" if require::remgine("random", mcf, node.ln) &&
@@ -164,7 +165,9 @@ pub fn node_condition(node: &mut Node, mut cond: String, mcf: &mut MCFunction) -
                 }
             }
         }
-        _ => {}
+        _ => {
+            cond = keys.join(" ")
+        }
     }
     (cond, isif)
 }
@@ -192,22 +195,29 @@ pub fn replacements(text: &String, node: &Node, mcf: &mut MCFunction, ln: usize)
         .replace("*{INT_MIN}", "-2147483648")
         .replace("*{PATH}", &*mcf.get_file_loc())
         .replace("*{NEAR1}", "limit=1,sort=nearest")
-        .replace("*{SB}", "\\u00a7")
         .replace("*{LN}", &*(node.ln + ln).to_string());
     parse_json_all(&mut text, mcf, node.ln + ln);
     text
 }
 
 fn parse_json_all(text: &mut String, mcf: &mut MCFunction, ln: usize) {
+    if text.starts_with("//") {
+        return;
+    }
     let mut pos = text.match_indices("*JSON{").map(|s| s.0).collect::<Vec<_>>();
     pos.reverse();
     for p in pos {
         if let Ok(out) = Blocker::new().find_size(text, p + 5) {
-            let options = text[(p + 6)..out - 1].to_string();
-            let (options, content) = options.split_once(" :: ").unwrap_or(("text", &*options));
-            let options = options.split(" ").collect::<Vec<_>>();
-            let json = options.first().unwrap_or(&"text").clone();
+            let mut input = Blocker::new().split_in_same_level(":", &text[(p + 6)..out - 1].to_string())
+                .unwrap_or(vec!["text".into(), "".into(), "\"\"".into()]);
+            input.insert(0, "*JSON".into());
+            if !require::min_args(4, &input, mcf, ln) {
+                return;
+            }
+            input.remove(0);
             let mut data = JSONData::new();
+            let options = input[0].split(" ").collect::<Vec<_>>();
+            let json = options.first().unwrap_or(&"text").clone();
             for (idx, mut opt) in options.into_iter().enumerate() {
                 let mut set = true;
                 if opt.starts_with("!") {
@@ -224,13 +234,33 @@ fn parse_json_all(text: &mut String, mcf: &mut MCFunction, ln: usize) {
                     _ => {}
                 }
             }
+            let mut events = Blocker::new().split_in_same_level(" ", &input[1]).unwrap_or(vec![]).into_iter();
+            while let Some(event) = events.next() {
+                match &*event {
+                    "hover" => {
+                        let style = events.next().unwrap_or("show_text".into()).to_string();
+                        let content = events.next().unwrap_or(r#"{"text":""}"#.into()).to_string();
+                        data.event_hover = Some((style, content));
+                    }
+                    "click" => {
+                        let style = events.next().unwrap_or("suggest_command".into()).to_string();
+                        let content = events.next().unwrap_or("/".into()).to_string();
+                        data.event_click = Some((style, content));
+                    }
+                    "" => {}
+                    _ => {
+                        warn(format_out(&*join!["Error parsing JSON, unknown event: '", &*event, "'"], &*mcf.get_file_loc(), ln));
+                    }
+                }
+            }
             let json = match json {
-                "score" => { Score(data, MCFunction::compile_score_path(&content.into(), mcf, ln)) }
-                "custom" => { Custom(data, content.to_string()) }
-                "nbt" => { NBT(data, content.to_string()) }
-                _ => { Text(data, content.replace("\\\"", "\\\\\"").replace("\"", "\\\"")) }
+                "score" => { Score(data, MCFunction::compile_score_path(&input[2..].join(":").trim().into(), mcf, ln)) }
+                "custom" => { Custom(data, input[2..].join(":").to_string()) }
+                "nbt" => { NBT(data, input[2..].join(":").trim().to_string()) }
+                _ => { Text(data, input[2..].join(":").trim().to_string()) }
             };
-            text.replace_range(p..out, &*json.to_string());
+            let json = json.to_string();
+            text.replace_range(p..out, &*json);
         }
     }
 }
@@ -242,6 +272,9 @@ struct JSONData {
     underline: Option<bool>,
     obfuscated: Option<bool>,
     color: Option<String>,
+
+    event_hover: Option<(String, String)>,
+    event_click: Option<(String, String)>,
 }
 
 impl JSONData {
@@ -253,6 +286,8 @@ impl JSONData {
             underline: None,
             obfuscated: None,
             color: None,
+            event_hover: None,
+            event_click: None,
         }
     }
 
@@ -263,6 +298,8 @@ impl JSONData {
         if let Some(b) = self.underline { json.push_str(&*join![r#","underlined":""#, &*b.to_string(), "\""]); }
         if let Some(b) = self.obfuscated { json.push_str(&*join![r#","obfuscated":""#, &*b.to_string(), "\""]); }
         if let Some(b) = self.color.clone() { json.push_str(&*join![r#","color":""#, &*b, "\""]); }
+        if let Some((t, d)) = &self.event_hover { json.push_str(&*join![r#","hoverEvent":{"action":""#, &*t, r#"","contents":"#, &*d, r#"}"#]); }
+        if let Some((t, d)) = &self.event_click { json.push_str(&*join![r#","clickEvent":{"action":""#, &*t, r#"","value":"#, &*d, r#"}"#]); }
         json
     }
 }
@@ -278,7 +315,7 @@ impl JSON {
     fn to_string(&self) -> String {
         match self {
             Text(data, text) => {
-                let mut json = join![r#"{"text":""#, &*text, "\""];
+                let mut json = join![r#"{"text":"#, &*text];
                 data.append_data(&mut json).push_str("}");
                 json
             }
@@ -305,6 +342,7 @@ impl JSON {
 
 pub fn finish_lines(lines: &mut Vec<String>, mcf: &mut MCFunction) {
     lines.iter_mut().for_each(|line| {
+        *line = line.replace("*{SB}", "§");
         qc!(mcf.meta.opt_level >= 1, optimize_line(line), ());
     });
 }
@@ -348,7 +386,7 @@ pub fn replace_local_tags(keys: &mut Vec<String>, mcf: &mut MCFunction) {
                         } else { o }
                     } else { o }
                 }).collect::<Vec<String>>();
-                *key = ops.join(",");
+                *key = join!["{", &*ops.join(","), "}"];
             }
         }
     });
@@ -362,6 +400,13 @@ pub mod require {
     pub fn min_args<T: Display>(count: usize, keys: &Vec<T>, mcf: &mut MCFunction, ln: usize) -> bool {
         if keys.len() < count {
             error(format_out(&*format!("Not enough arguments for '{}' ({} expected, found {})", keys[0], count, keys.len()), &*mcf.get_file_loc(), ln))
+        }
+        keys.len() >= count
+    }
+
+    pub fn min_args_path<T: Display>(count: usize, keys: &Vec<T>, path: String, ln: usize) -> bool {
+        if keys.len() < count {
+            error(format_out(&*format!("Not enough arguments for '{}' ({} expected, found {})", keys[0], count, keys.len()), &*path, ln))
         }
         keys.len() >= count
     }

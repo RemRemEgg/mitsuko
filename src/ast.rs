@@ -73,15 +73,22 @@ impl Node {
                 });
                 if id.eq(&'r') {
                     let amo = (blines.len() - 1) * blines.remove(0).parse::<usize>().unwrap_or(1);
+                    compile::finish_lines(&mut blines, mcf);
                     blines = blines.into_iter().cycle().take(amo).collect::<Vec<_>>();
-                }
-                if blines.len() <= 1 && mcf.meta.opt_level >= 1 {
-                    lines.push(blines.join(" "));
-                } else {
                     let path = join![&*mcf.get_path(), ".", &*id.to_string(), &*self.ln.to_string()];
                     let path = path.strip_prefix("/").unwrap_or(&*path);
                     lines.push(join!("function ", &*mcf.ns_id, ":", &*path));
-                    self.add_to_files(files, path.into(), &mut blines, mcf);
+                    files.push((path.into(), blines));
+                    return;
+                } else {
+                    if blines.len() <= 1 && mcf.meta.opt_level >= 1 {
+                        lines.push(blines.join(" "));
+                    } else {
+                        let path = join![&*mcf.get_path(), ".", &*id.to_string(), &*self.ln.to_string()];
+                        let path = path.strip_prefix("/").unwrap_or(&*path);
+                        lines.push(join!("function ", &*mcf.ns_id, ":", &*path));
+                        self.add_to_files(files, path.into(), &mut blines, mcf);
+                    }
                 }
             }
 

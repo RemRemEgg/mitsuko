@@ -1,7 +1,7 @@
 // craftmine ong :krill:
 
 use std::cmp::min;
-use std::fs::{DirEntry, read_dir, ReadDir, remove_dir_all};
+use std::fs::{read_dir, ReadDir, remove_dir_all};
 use crate::{*, server::*};
 use crate::compile::require;
 
@@ -61,7 +61,7 @@ impl Datapack {
             for ns in nss.unwrap().map(|x| x.unwrap()) {
                 if ns.path().is_dir() {
                     let nsnew = Namespace::new(
-                        ns,
+                        ns.file_name().to_string_lossy().to_string(),
                         self.meta.clone(),
                     );
                     if let Some(mut ns) = nsnew {
@@ -104,6 +104,28 @@ impl Datapack {
 
         unsafe {
             DATAROOT = self.data("");
+            ALIAS_FUNCTIONS.iter().for_each(|(ns, na, fnc)| {
+                let added = self.namespaces.iter_mut().any(|tns| -> bool {
+                    if tns.id.eq(ns) {
+                        let mut mcf = MCFunction::new("".into(), na.clone(), 0, &tns);
+                        mcf.node.as_mut().unwrap().lines = vec![fnc.into()];
+                        mcf.compile();
+                        tns.functions.push(mcf);
+                        true
+                    } else {
+                        false
+                    }
+                });
+                if !added {
+                    if let Some(mut nsnew) = Namespace::new(ns.into(), self.meta.clone()) {
+                        let mut mcf = MCFunction::new("".into(), na.clone(), 0, &nsnew);
+                        mcf.node.as_mut().unwrap().lines = vec![fnc.into()];
+                        mcf.compile();
+                        nsnew.functions.push(mcf);
+                        self.namespaces.push(nsnew);
+                    }
+                }
+            });
         }
 
         remove_dir_all(self.get_dir("/generated")).ok();
@@ -259,8 +281,7 @@ pub struct Namespace {
 }
 
 impl Namespace {
-    fn new(loc: DirEntry, meta: Meta) -> Option<Namespace> {
-        let name = loc.file_name().to_string_lossy().to_string();
+    fn new(name: String, meta: Meta) -> Option<Namespace> {
         if name.eq(&"".to_string()) || {
             let mut nid = name.replace(|ch| ch >= 'a' && ch <= 'z', "");
             nid = nid.replace(|ch| ch >= '0' && ch <= '9', "");
@@ -268,6 +289,7 @@ impl Namespace {
             nid.len() != 0
         } {
             error(join!["Invalid Namespace: ", &*name]);
+            return None
         }
         Some(Namespace {
             id: name,
@@ -307,7 +329,7 @@ impl Namespace {
             self.process_link_file(file, lines)
         }
         for (file, lines) in files[0].iter_mut() {
-            MCFunction::process_function_file(self, file, lines)
+            MCFunction::process_function_file(self, file, lines);
         }
         for (file, lines) in files[2].iter_mut() {
             self.process_item_file(file, lines)
@@ -315,7 +337,9 @@ impl Namespace {
         for function in self.functions.iter_mut() {
             unsafe {
                 KNOWN_FUNCTIONS.push(join![&*self.id, ":", &*function.get_path().trim_start_matches("/").to_string()]);
-                EXPORT_FUNCTIONS.push(join![&*self.id, ":", &*function.get_path().trim_start_matches("/").to_string()]);
+                if function.allow_export {
+                    EXPORT_FUNCTIONS.push(join![&*self.id, ":", &*function.get_path().trim_start_matches("/").to_string()]);
+                }
             }
         }
     }
@@ -342,6 +366,7 @@ impl Namespace {
                         "§"}).to_string())
                     .filter(|l| !l.eq(&"none"))
                     .filter(|f| !f.eq("§"))
+                    .map(|l| { qc!(l.contains(":"), l, join![&*self.id, ":", &*l]) })
                     .collect::<Vec<_>>();
                 unsafe {
                     KNOWN_FUNCTIONS.push(join!["#", &*file, ":", line[0]]);
@@ -413,7 +438,10 @@ pub struct MCFunction {
     pub meta: Meta,
     pub ln: usize,
     pub ns_id: String,
+    allow_export: bool,
 }
+
+type FileData = (Vec<(String, String)>, (bool, Option<String>), bool);
 
 impl MCFunction {
     fn process_function_file(ns: &mut Namespace, file: &mut String, lines: &mut Vec<String>) {
@@ -421,14 +449,25 @@ impl MCFunction {
         qc!(ns.meta.vb > 0, status(join!["Processing function file '", &*file.form_foreground(str::BLU), "'"]), ());
         let mut fns = vec![];
         let mut ln = 1usize;
+        let mut data: FileData = (vec![], (false, None), true);
         'lines: loop {
             if lines.len() <= 0 {
                 break 'lines;
             }
-            let (remove, optfn) = MCFunction::scan_function_line(file, lines, ns, ln);
+            let (remove, optfn) = MCFunction::scan_function_line(file, lines, ns, ln, &mut data);
             ln += remove;
             *lines = lines[remove..].to_vec();
-            if let Some(gn) = optfn {
+            if let Some(mut gn) = optfn {
+                if data.1.0 {
+                    let path = data.1.1.unwrap_or(gn.call_name.clone());
+                    let (exns, exna) = path.split_once(":").unwrap_or(("minecraft", &*path));
+                    unsafe {
+                        ALIAS_FUNCTIONS.push((exns.into(), exna.into(), join!("function ", &*ns.id, ":", &*gn.get_path().trim_start_matches("/"))));
+                    }
+                }
+                gn.allow_export = data.2;
+                data.1 = (false, None);
+                data.2 = true;
                 fns.push(gn);
                 ns.meta = meta.clone();
             }
@@ -436,7 +475,7 @@ impl MCFunction {
         ns.functions.append(&mut fns);
     }
 
-    fn scan_function_line(file: &String, lines: &Vec<String>, ns: &mut Namespace, ln: usize) -> (usize, Option<MCFunction>) {
+    fn scan_function_line(file: &String, lines: &Vec<String>, ns: &mut Namespace, ln: usize, data: &mut FileData) -> (usize, Option<MCFunction>) {
         let rem: usize;
         let mut optfn: Option<MCFunction> = None;
         let keys: Vec<String> = lines[0].trim().split(" ").map(|x| x.to_string()).collect::<Vec<_>>();
@@ -452,9 +491,29 @@ impl MCFunction {
                         ln,
                     ));
                 }
-                let res = MCFunction::extract_from(lines, file, &keys, ns, ln);
-                rem = res.0;
+                let mut res = MCFunction::extract_from(lines, file, &keys, ns, ln);
+                res.1.vars.append(&mut data.0.clone());
                 optfn = Some(res.1);
+                rem = res.0;
+            }
+            "@set" if require::min_args_path(3, &keys, join![&*ns.id, "/functions/", &*file], ln) => {
+                data.0.push((keys[1].clone(), keys[2..].join(" ")));
+                rem = 1;
+            }
+            "@meta" if require::min_args_path(3, &keys, join![&*ns.id, "/functions/", &*file], ln) => {
+                let prop = &*keys[1];
+                let value = &*keys[2];
+                ns.meta.set_property(prop, value, false, (ns.extend_path(&*file), ln));
+                rem = 1;
+            }
+            "@alias" => {
+                data.1.0 = true;
+                data.1.1 = keys.get(1).cloned();
+                rem = 1;
+            }
+            "@no_export" => {
+                data.2 = false;
+                rem = 1;
             }
             _ => rem = MCFunction::scan_pack_char(file, &lines[0], ns, ln),
         }
@@ -470,40 +529,12 @@ impl MCFunction {
             .get(0)
             .unwrap_or(&'◙');
         match char_1 {
-            '#' => MCFunction::test_tag(file, line, ns, ln),
             '/' | '◙' | ' ' | '@' => {}
             c @ _ => error(format_out(
                 &*join!["Unexpected token '", &*c.form_foreground(str::ORN), "'"],
                 &*ns.extend_path(&*file), ln)),
         }
         rem
-    }
-
-    fn test_tag(file: &String, line: &String, ns: &mut Namespace, ln: usize) {
-        println!("TESTING {}", line);
-        let mut line = line.trim();
-        let (mut prop, mut value) = ("error", "");
-        let malformed = || error(format_out(
-            &*join!["Malformed argument tag \'", &*line.form_foreground(str::ORN), "\'"],
-            &*ns.extend_path(&*file), ln));
-        if {
-            if line.starts_with("#[") && line.ends_with("]") {
-                line = &line[2..line.len() - 1];
-                let p = line.split_once("=").unwrap_or_else(|| {
-                    malformed();
-                    ("error", "")
-                });
-                if p.0.eq("error") {
-                    return;
-                }
-                (prop, value) = (p.0.trim(), p.1.trim());
-                true
-            } else { false }
-        } {
-            ns.meta.set_property(prop, value, false, (ns.extend_path(&*file), ln));
-        } else {
-            malformed();
-        }
     }
 
     pub fn is_valid_fn(function: &str) -> bool {
@@ -579,6 +610,7 @@ impl MCFunction {
             meta: ns.meta.clone(),
             ln,
             ns_id: ns.id.clone(),
+            allow_export: true,
         }
     }
 
@@ -593,6 +625,7 @@ impl MCFunction {
                             (ch >= 'A' && ch <= 'Z') ||
                             (ch >= '0' && ch <= '9') ||
                             (ch >= '#' && ch <= '%') ||
+                            (ch == '-') ||
                             (ch == '_'));
                     nb.len() == 0
                 };
@@ -614,6 +647,7 @@ impl MCFunction {
                 (ch >= 'A' && ch <= 'Z') ||
                 (ch >= '0' && ch <= '9') ||
                 (ch == '_') ||
+                (ch == '-') ||
                 (ch == '.'));
         return nb.len() == 0;
     }
@@ -626,8 +660,7 @@ impl MCFunction {
         } && {
             if selector.len() > 1 {
                 selector[1..2] == *"[" && selector.strip_suffix(']').is_some()
-            } else { true }
-        } { true } else if error_if_not {
+            } else { true } } { true } else if error_if_not {
             error(format_out(&*format!("Selector expected, got '{}'", esave), &*mcf.get_file_loc(), ln));
             false
         } else {
@@ -891,7 +924,7 @@ impl Item {
                         join!["}"],
                         join!["clear @s knowledge_book"],
                         join!["advancement revoke @s only ", &*ns.id, ":", &*self.fn_call_path],
-                        join!["recipe take @s ", &*ns.id, ":", &*self.fn_call_path],
+                        // join!["recipe take @s ", &*ns.id, ":", &*self.fn_call_path],
                     ])
                 }
 

@@ -25,7 +25,7 @@ Mitsuko is a custom language designed to make programming in minecraft easier an
 ### [Function Examples & Syntax](#function-examples--syntax)
 * [Function Definitions](#function-definitions)
 * [Comments](#comments)
-* [Inline Tags](#inline-tags)
+* [Modifiers](#modifiers)
 * [Function Code](#function-code)
 * [Function Code / Execute](#execute)
 * [Function Code / Calling Functions](#calling-functions)
@@ -164,7 +164,7 @@ This can be used for files that Mitsuko does not support, like world gen.
 
 ---
 # Function Examples & Syntax
-Function files contain three things: functions, comments, and in-line tags.
+Function files contain three things: functions, comments, and modifiers.
 ## Function Definitions
 Functions can be defined by `fn <name>() {` and the `<name>` must be a valid function path.
 Example of function names:
@@ -194,23 +194,61 @@ Unlike most programming languages, these functions cannot accept arguments. This
 Comments can be put both inside and outside of functions but cannot be put after a command.
 A comment is two forward slashes followed by any text.
 ```// This is a comment!```
-##Inline tags
-Certain tags can be put outside of functions to change their behavior. See [tags](#tags) for which tags can and cannot be used in this context.
-Tags are always placed outside of functions, and can will one change the function that comes after it.
+##Modifiers
+Modifiers are single lines of code that change either a single function or all functions in a file. Modifiers are an `@` followed by data specifying the modification.
+####@alias
+The `alias` modifier can be used to create an alias for a given function.
+```mitsuko
+// This function can be called with 'function example:short_name'
+@alias example:short_name
+fn really_long_function_name_that_i_dont_like() {}
 
-Example of using the `comments` tag:
+// This function can be called with 'function useful_fn'
+@alias
+fn buried/in/folders/useful_fn() {}
+```
+If a name is provided, the alias will match the given namespace and name. If no namespace is given, it will default to `minecraft`.
+If no name is given, the alias will be the function's name at `minecraft:`. Aliases do not override the function, only create a new one that is linked.
+####@meta
+The `meta` can can be used to temporarily change the options in `pack.mcmeta`. See [tags](#tags) for which tags can and cannot be used in this context.
+Tags can only change the single function that comes after it.
+
+Example:
 ``` 
 fn func1() {
     // This comment is dependent on the settings in pack.msk
 }
 
-#[comments = false]
+@meta comments false
 fn func2() {
     // This comment will not be saved
 }
 
 fn func3() {
     // This comment is dependent on the settings in pack.msk
+}
+```
+####@no_export
+Prevents a function from getting exported.
+```
+@no_export
+fn private_fn() {}
+
+fn exported_fn() {}
+```
+####@set
+The `@set` modifier works just like a `set` command; It will set a specific variable to a value for all succeeding functions in a file.
+
+Example:
+```
+@set AUTHOR RemRemEgg
+@set SIZE 10
+fn init() {
+    tellraw @a *JSON{:: "This was made by *{AUTHOR}"}
+}
+
+fn tree() {
+    ast @e[distance=..*{SIZE}] ast @e[distance=..*{SIZE}] ast @e[distance=..*{SIZE}] run tree_2()
 }
 ```
 ## Function Code
@@ -417,7 +455,7 @@ Two scores can be compared with `<short_score> <operation> <value>`. `<value>` c
 [*Remgine Exclusive*] Random percentages can be used with `random <amount>`. For a full list of the allowed amounts, see the remgine documentation. 
 
 ## Quick JSON
-JSON objects can be quickly created using `*JSON{<type> <format> :: <data>}`
+JSON objects can be quickly created using `*JSON{<type> <format...>:[events]:<data>}`
 
 `<type>` can be one of four items:
 * "text" : `<data>` is a string literal to be displayed (default)
@@ -425,17 +463,22 @@ JSON objects can be quickly created using `*JSON{<type> <format> :: <data>}`
 * "nbt" : `<data>` is either `block <x y z> : path`, `entity <selector> : path`, or `storage <name> : path`
 * "custom" : Only the format will be applied, `<data>` is appended to the format
 
-`<format>` is a series of arguments: [italic, bold, strike, underlined, obfuscated]. Putting one of these will enable it, placing an `!` in front will disable it. Anything else will be interpreted as color.
+`<format...>` is a series of arguments: [italic, bold, strike, underlined, obfuscated]. Putting one of these will enable it, placing an `!` in front will disable it. Anything else will be interpreted as color.
 
 `<data>` is any data to be used by the JSON, dependent on the type.
 
+`[events]` is an optional filed dedicated to applying `hoverEvent` and `clickEvent`. Format for events is `<event_id> <event_type> <event_data>`.
+`<event_id>` is either "hover" or "click". `<event_type>` is the action to be preformed (show_text, show_item, show_entity, suggest_command, etc.). `<event_data>` is the data passed to the event.
+
 Examples:
 ```
-*JSON{text aqua underlined :: I am an underlined, aqua colored piece of text!}
+*JSON{text aqua underlined :: "I am an underlined, aqua colored piece of text!"}
 *JSON{score strike !bold !italic :: @s:&score}
 *JSON{nbt bold #58af50 :: block 10 50 12 : Items}
+*JSON{text : hover show_text *JSON{score :: @s:&score} : "Hover to see your score!"}
 ```
-Quick JSON Objects can be nested, but the Lexer gets pretty angry. See [Danger: @NOLEX](#nolex)
+Section breaks (§) can be used to apply formatting where Minecraft allows it. However, Quick JSON does not like dealling with them. Section breaks can be inserted with the `*{SB}` retrieval.
+Nesting Quick JSON Objects is experimental, the Lexer gets pretty angry. See [Danger: @NOLEX](#nolex)
 
 ## '&' and 'r&' Replacements
 In many places, the `&` can be used to reference the datapack itself, or a local part of it.

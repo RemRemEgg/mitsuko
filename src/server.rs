@@ -17,6 +17,7 @@ static mut WARNINGS: Vec<String> = vec![];
 pub static mut SUPPRESS_WARNINGS: bool = false;
 pub static mut KNOWN_FUNCTIONS: Vec<String> = vec![];
 pub static mut EXPORT_FUNCTIONS: Vec<String> = vec![];
+pub static mut ALIAS_FUNCTIONS: Vec<(String, String, String)> = vec![];
 pub static mut HIT_ERROR: i32 = 0;
 
 pub mod errors {
@@ -133,7 +134,7 @@ pub trait FancyText: ToString {
     //debug
     const AQU: usize = 6;
     //unused
-    const WHT: usize = 7; 
+    const WHT: usize = 7;
 
     fn form_bold(&self) -> String {
         join!("\x1b[1m", &*self.to_string(), "\x1b[m")
@@ -276,48 +277,45 @@ pub fn path_without_functions(path: String) -> String {
 pub fn get_cli_args() -> (String, Option<String>, bool, bool) {
     let mut args = env::args().collect::<Vec<String>>().into_iter();
     args.next();
-
-    let pck;
-    let (mut mov, mut clr, mut exp) = (None, false, false);
-    match &*args.next().unwrap_or_else(|| {
-        status_color("No pack specified".into(), str::RED);
-        "-h".into()
-    }) {
-        "-h" | "--help" | "?" => {
+    
+    let mode = args.next().unwrap_or("help".into());
+    match &*mode {
+        "help" => {
             print_help();
             exit(0);
         }
-        p @ _ => {
-            pck = p.into();
-        }
-    }
+        "build" => {
+            let (mut mov, mut clr, mut exp) = (None, false, false);
+            let pck = args.next().unwrap_or_else(|| {
+                death_error_type(join!("No pack specified"), errors::BAD_CLI_ARGS)
+            }).into();
 
-    while let Some(arg) = args.next() {
-        match &*arg {
-            "--help" | "-h" | "?" => {
-                print_help();
+            while let Some(arg) = args.next() {
+                match &*arg {
+                    "--move" | "-m" => mov = args.next(),
+                    "--clear" | "-c" => clr = true,
+                    "--export" | "-e" => exp = true,
+                    _ => {
+                        death_error_type(join!("Unknown arg '", &*arg, "'"), errors::BAD_CLI_ARGS);
+                    }
+                }
             }
-            "--move" | "-m" => mov = args.next(),
-            "--clear" | "-c" => clr = true,
-            "--export" | "-e" => exp = true,
-            _ => {
-                status_color(join!("Unknown arg '", &*arg, "'"), str::RED);
-                exit(errors::BAD_CLI_ARGS);
+
+            if clr && mov.is_none() {
+                death_error_type("Clear enabled without specifying a location".into(), errors::BAD_CLI_ARGS);
             }
+
+            (pck, mov, clr, exp)
         }
+        _ => {death_error_type(join!("Unknown mode '", &*mode, "', use 'help' to see all available commands"), errors::BAD_CLI_ARGS)}
     }
-
-    if clr && mov.is_none() {
-        status_color("Clear enabled without specifying a location".into(), str::RED);
-        exit(errors::BAD_CLI_ARGS);
-    }
-
-    (pck, mov, clr, exp)
 }
 
 fn print_help() {
-    println!("Usage: mitsuko <pack_location> [options]\n\t{}\n", &*[
-        "(-h | --help | ?)", "\tDisplay this message",
+    println!("Usage: mitsuko [MODE] [OPTIONS]");
+    println!("Modes:");
+    println!("help\n\tPrints this message");
+    println!("build <pack_location> [options]\n\t{}\n", &*[
         "(-m | --move) <locations>", "\tMove the compiled pack to <location>/datapacks",
         "(-c | --clear)", "\tRemove the old datapack at <location>/datapacks",
         "(-e | --export)", "\tEnable creation of export file"
@@ -405,7 +403,7 @@ impl Blocker {
         }
         let mut pos: usize = 0;
         while let Some(c) = cs.next() {
-            pos += 1;
+            pos += c.to_string().len(); // I LOVE ENCODING
             match c {
                 '\\' => {
                     cs.next();
@@ -497,12 +495,13 @@ impl Blocker {
                 out.push(haystack[pos_old..pos].to_string());
                 pos += blade.len();
                 pos_old = pos;
-            }
-            let res = self.find_size(&haystack, pos)?;
-            if res != Blocker::NOT_FOUND {
-                pos = res;
             } else {
-                pos += 1;
+                let res = self.find_size(&haystack, pos)?;
+                if res != Blocker::NOT_FOUND {
+                    pos = res;
+                } else {
+                    pos += 1;
+                }
             }
         }
     }
