@@ -33,23 +33,10 @@ pub fn print_warnings(pack: &Datapack) {
         if WARNINGS.len() > 0 && !SUPPRESS_WARNINGS {
             println!();
             status(format!(
-                "'{}' Generated {} Warnings: ",
+                "'{}' Generated {} Warnings",
                 pack.get_view_name(),
                 WARNINGS.len()
             ).form_foreground(str::ORN));
-            for (i, e) in WARNINGS.iter().enumerate() {
-                print_warning(
-                    format!(
-                        "{}{}",
-                        e,
-                        if i == WARNINGS.len() - 1 {
-                            "\n"
-                        } else {
-                            ""
-                        }
-                    ), i,
-                );
-            }
         }
         if SUPPRESS_WARNINGS {
             SUPPRESS_WARNINGS = false;
@@ -68,7 +55,7 @@ pub fn warn(message: String) {
     }
 }
 
-unsafe fn print_warning(message: String, i: usize) {
+unsafe fn _print_warning(message: String, i: usize) {
     println!("\x1b[93m‼»\x1b[m   [{}] {}", (i + 1).to_string().form_foreground(str::ORN), message);
 }
 

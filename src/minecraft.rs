@@ -436,8 +436,8 @@ impl Namespace {
 #[derive(Debug, Clone)]
 pub struct MCFunction {
     node: Option<Node>,
-    path: String,
     pub file_path: String,
+    call_path: String,
     call_name: String,
     pub calls: Vec<(String, usize)>,
     pub vars: Vec<(String, String)>,
@@ -558,7 +558,7 @@ impl MCFunction {
 
     fn extract_from(lines: &Vec<String>, file: &String, keys: &Vec<String>, ns: &mut Namespace, ln: usize)
                     -> (usize, MCFunction) {
-        let mut mcf = MCFunction::new(path_without_functions(file.to_string()),
+        let mut mcf = MCFunction::new(file.to_string(),
                                       keys[1].to_string().replace("()", ""), ln, ns);
         if keys.get(2).is_some() && keys[2].starts_with("{") {
             let rem = mcf.extract_block(lines, ns, ln);
@@ -608,7 +608,7 @@ impl MCFunction {
         }
         MCFunction {
             node: Some(Node::new(NodeType::Root, ln)),
-            path,
+            call_path: path_without_functions(path),
             file_path,
             call_name,
             calls: vec![],
@@ -775,7 +775,7 @@ impl MCFunction {
     }
 
     pub fn get_path(&self) -> String {
-        return join![&*self.path, "/", &*self.call_name];
+        return join![&*self.call_path, "/", &*self.call_name];
     }
 
     fn get_save_files(&mut self) -> SaveFiles {
@@ -937,7 +937,7 @@ impl Item {
                 let (path, name) = keys[2].rsplit_once("/").unwrap_or(("", &*keys[2]));
                 self.fn_call_path = keys[2].to_string();
                 self.function.file_path = path.to_string();
-                self.function.path = path.to_string();
+                self.function.call_path = path.to_string();
                 self.function.call_name = name.to_string();
                 1
             }
@@ -964,7 +964,7 @@ impl Item {
                 }
 
                 nna.file_path = self.function.file_path.to_string();
-                nna.path = self.function.path.to_string();
+                nna.call_path = self.function.call_path.to_string();
                 nna.call_name = self.function.call_name.to_string();
                 self.function = nna;
                 remx + 1
