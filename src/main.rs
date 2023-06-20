@@ -21,6 +21,7 @@ static MITSUKO: &str = include_str!("mitsuko.txt");
 
 //todo add bundling
 //todo -c warns on folder not found
+//todo add for & while to ref
 
 fn main() {
     let mut times = (Instant::now(), Instant::now(), Instant::now(), Instant::now());

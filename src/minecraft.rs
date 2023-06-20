@@ -289,7 +289,7 @@ impl Namespace {
             nid.len() != 0
         } {
             error(join!["Invalid Namespace: ", &*name]);
-            return None
+            return None;
         }
         Some(Namespace {
             id: name,
@@ -336,9 +336,15 @@ impl Namespace {
         }
         for function in self.functions.iter_mut() {
             unsafe {
-                KNOWN_FUNCTIONS.push(join![&*self.id, ":", &*function.get_path().trim_start_matches("/").to_string()]);
-                if function.allow_export {
-                    EXPORT_FUNCTIONS.push(join![&*self.id, ":", &*function.get_path().trim_start_matches("/").to_string()]);
+                let value = join![&*self.id, ":", &*function.get_path().trim_start_matches("/").to_string()];
+                if KNOWN_FUNCTIONS.contains(&value) {
+                    error(format_out(&*join!["A function with the name '", &*function.get_path().trim_start_matches("/").form_foreground(str::ORN), "' already exists"], 
+                                     &*function.get_file_loc(), function.ln));
+                } else {
+                    KNOWN_FUNCTIONS.push(value);
+                    if function.allow_export {
+                        EXPORT_FUNCTIONS.push(join![&*self.id, ":", &*function.get_path().trim_start_matches("/").to_string()]);
+                    }
                 }
             }
         }
@@ -660,7 +666,8 @@ impl MCFunction {
         } && {
             if selector.len() > 1 {
                 selector[1..2] == *"[" && selector.strip_suffix(']').is_some()
-            } else { true } } { true } else if error_if_not {
+            } else { true }
+        } { true } else if error_if_not {
             error(format_out(&*format!("Selector expected, got '{}'", esave), &*mcf.get_file_loc(), ln));
             false
         } else {
@@ -831,6 +838,34 @@ impl MCValue {
             MCValue::Score { name, board } => { join![&**name, " ", &**board] }
             MCValue::Number { value } => { value.to_string() }
         }
+    }
+
+    pub fn set_equal_to(&self, other: &MCValue, mcf: &MCFunction, ln: usize) -> String {
+        if self.is_number() {
+            error(format_out("Cannot assign a number a value", &*mcf.get_file_loc(), ln));
+        }
+        return match other {
+            MCValue::Score { name, board } => {
+                join!["scoreboard players operation ", &*self.get(), " = ", &*name, " ", &*board]
+            }
+            MCValue::Number { value } => {
+                join!["scoreboard players set ", &*self.get(), " ", &*value.to_string()]
+            }
+        };
+    }
+
+    pub fn get_less_than(&self, other: &MCValue, mcf: &MCFunction, ln: usize) -> String {
+        if self.is_number() {
+            error(format_out("Cannot have a number on the left-hand side of a test", &*mcf.get_file_loc(), ln));
+        }
+        return match other {
+            MCValue::Score { name, board } => {
+                join!["if score ", &*self.get(), " < ", &*name, " ", &*board]
+            }
+            MCValue::Number { value } => {
+                join!["if score ", &*self.get(), " matches ..", &*(value - 1).to_string()]
+            }
+        };
     }
 }
 

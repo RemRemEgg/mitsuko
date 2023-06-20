@@ -11,7 +11,7 @@ use crate::server::Blocker;
 #[derive(Debug, Clone)]
 pub struct Node {
     pub node: NodeType,
-    children: Vec<Node>,
+    pub children: Vec<Node>,
     pub lines: Vec<String>,
     pub(crate) ln: usize,
 }
@@ -99,7 +99,13 @@ impl Node {
                 });
                 if !last.is_empty() {
                     if self.lines.len() > 1 {
-                        error(format_out("Cannot stack multiline statements", &*mcf.get_file_loc(), self.ln));
+                        if last.len() > 1 {
+                            error(format_out("Cannot stack multiline statements", &*mcf.get_file_loc(), self.ln));
+                        } else {
+                            let melast = self.lines.last_mut().unwrap();
+                            melast.push(' ');
+                            melast.push_str(&*last[0]);
+                        }
                     } else {
                         let me = self.lines[0].clone();
                         self.lines = last;
@@ -174,6 +180,11 @@ impl Node {
 
     #[allow(arithmetic_overflow)]
     fn build_from_lines(lines: &mut Vec<String>, mcf: &mut MCFunction, ln: usize) -> (usize, Option<Node>) {
+        if lines[0].starts_with("//") {
+            let mut node = Node::new(Comment, ln);
+            node.lines = vec![join!["#", &lines[0][2..]]];
+            return (1, Some(node));
+        }
         let keys = Blocker::new().split_in_same_level(" ", &lines[0]);
         if let Err(e) = keys {
             error(format_out(&*e, &*mcf.get_file_loc(), ln));
@@ -253,6 +264,20 @@ impl Node {
                 qc!(keys.len() > 2, keys.insert(2, "run".into()), ());
                 lines[0] = join!["execute ", &*keys.join(" ")];
                 return Node::build_from_lines(lines, mcf, ln);
+            }
+            "while" if require::min_args(2, &keys, mcf, ln) => {
+                node.node = Command;
+                node.lines = vec![lines[0].clone()];
+                let (remx, nna) = Node::build_extract_block(lines, &mut node, mcf, 'w');
+                node.children.push(nna);
+                rem = remx;
+            }
+            "for" if require::min_args(2, &keys, mcf, ln) => {
+                node.node = Command;
+                node.lines = vec![lines[0].clone()];
+                let (remx, nna) = Node::build_extract_block(lines, &mut node, mcf, 'f');
+                node.children.push(nna);
+                rem = remx;
             }
             "tag" if keys.len() > 3 => {
                 keys[3] = keys[3].replace("r&", "remgine.").replace("&", &*join![&*mcf.ns_id, "."]);

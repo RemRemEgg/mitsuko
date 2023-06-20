@@ -57,6 +57,42 @@ pub fn node_text(node: &mut Node, mcf: &mut MCFunction) {
                         node.lines = vec![join!["scoreboard players set @s remgine.rmm ", &*power.to_string()], cmd];
                     };
                 }
+                "while" => {
+                    if let Ok(conds) = Blocker::new().split_in_same_level(" && ", &keys[1][1..keys[1].len() - 1].to_string()) {
+                        let mut call_cond = conds.into_iter().map(|cond| node_condition(node, cond, mcf))
+                            .enumerate().map(|(_, (ccon, isif))| -> String {
+                            join![qc!(isif, "if ", "unless "), &*ccon]
+                        }).collect::<Vec<_>>().join(" ");
+                        call_cond = join!["execute ", &*call_cond, " run"];
+                        let nna = &mut node.children[0];
+                        let path = join![&*mcf.get_path(), ".w", &*nna.ln.to_string()];
+                        let path = path.strip_prefix("/").unwrap_or(&*path);
+                        nna.lines.push(join!(&*call_cond, " function ", &*mcf.ns_id, ":", &*path));
+                        node.lines = vec![call_cond];
+                    } else {
+                        error(format_out("Failed to parse while statement", &*mcf.get_file_loc(), node.ln));
+                    }
+                }
+                "for" => {
+                    let keys = keys[1][1..keys[1].len() - 1].split(",").map(|s| s.trim().to_string()).collect::<Vec<_>>();
+                    if require::min_args_named(2, "for loop", &keys, mcf, node.ln) {
+                        let target = MCValue::new(&keys[0], mcf, node.ln);
+                        let mut stop = MCValue::new(&keys[1], mcf, node.ln);
+                        let mut start = MCValue::Number { value: 0 };
+                        if keys.len() == 3 {
+                            start = stop;
+                            stop = MCValue::new(&keys[2], mcf, node.ln);
+                        }
+                        node.lines.insert(0, target.set_equal_to(&start, mcf, node.ln));
+                        let call_cond = join!["execute ", &*target.get_less_than(&stop, mcf, node.ln), " run"];
+                        let nna = &mut node.children[0];
+                        let path = join![&*mcf.get_path(), ".f", &*nna.ln.to_string()];
+                        let path = path.strip_prefix("/").unwrap_or(&*path);
+                        nna.lines.push(join!["scoreboard players add ", &*target.get(), " 1"]);
+                        nna.lines.push(join!(&*call_cond, " function ", &*mcf.ns_id, ":", &*path));
+                        node.lines[1] = call_cond;
+                    }
+                }
                 f @ _ => {
                     if !f.is_empty() && !COMMANDS.contains(&f) {
                         warn(format_out(&*join!["Unknown command '", f, "'"], &*mcf.get_file_loc(), node.ln))
@@ -181,7 +217,7 @@ pub fn is_fn_call(call: &str, mcf: &mut MCFunction) -> Option<String> {
     return if MCFunction::is_valid_fn(&*call) {
         call = call.trim_end_matches("()");
         let (ns, name) = call.split_once(":").unwrap_or((&*mcf.ns_id, call));
-        let path = qc!(local, crate::path_without_functions(mcf.file_path.clone()), "".into());
+        let path = qc!(local, path_without_functions(mcf.file_path.clone()), "".into());
         Some(join![qc!(tag, "#", ""), ns, ":", &*path, qc!(local && path.len() > 0, "/", ""), name])
     } else {
         None
@@ -400,6 +436,13 @@ pub mod require {
     pub fn min_args<T: Display>(count: usize, keys: &Vec<T>, mcf: &mut MCFunction, ln: usize) -> bool {
         if keys.len() < count {
             error(format_out(&*format!("Not enough arguments for '{}' ({} expected, found {})", keys[0], count, keys.len()), &*mcf.get_file_loc(), ln))
+        }
+        keys.len() >= count
+    }
+
+    pub fn min_args_named<T: Display>(count: usize, name: &str, keys: &Vec<T>, mcf: &mut MCFunction, ln: usize) -> bool {
+        if keys.len() < count {
+            error(format_out(&*format!("Not enough arguments for '{}' ({} expected, found {})", name, count, keys.len()), &*mcf.get_file_loc(), ln))
         }
         keys.len() >= count
     }

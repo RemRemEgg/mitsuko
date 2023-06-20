@@ -268,7 +268,7 @@ fn direntry_to_name_loc(dir: &DirEntry, offset: usize) -> String {
 
 pub fn path_without_functions(path: String) -> String {
     if path.ends_with("functions") {
-        path.rsplit_once("functions").unwrap_or(("", "")).0.into()
+        path.rsplit_once("/functions").unwrap_or(("", "")).0.into()
     } else {
         path
     }
