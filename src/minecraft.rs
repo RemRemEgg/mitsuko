@@ -37,7 +37,7 @@ impl Datapack {
         for tag in tags {
             if tag.trim().is_empty() { continue; }
             if tag.starts_with("use ") {
-                self.import(&tag[4..]);
+                self.import(tag[4..].trim().to_string());
                 continue;
             }
             let s = tag.trim().split("=").collect::<Vec<&str>>();
@@ -46,10 +46,10 @@ impl Datapack {
         }
     }
 
-    fn import(&self, name: &str) {
+    fn import(&self, name: String) {
         unsafe {
-            let import = fs::read_to_string(join!["./imports/", name, ".export.msk"]).unwrap_or_else(|e| {
-                death_error_type(join!("Could not read '",&*join!["./imports/", name, ".export.msk"].form_foreground(str::ORN),"' (", &*e.to_string(), ")"), errors::IMPORT_NOT_FOUND);
+            let import = fs::read_to_string(join!["./imports/", &*name, ".export.msk"]).unwrap_or_else(|e| {
+                death_error_type(join!("Could not read '",&*join!["./imports/", &*name, ".export.msk"].form_foreground(str::ORN),"' (", &*e.to_string(), ")"), errors::IMPORT_NOT_FOUND);
             });
             KNOWN_FUNCTIONS.append(&mut import.split(",").map(|s| s.to_string()).collect());
         }
