@@ -8,6 +8,8 @@
 Mitsuko is a custom language designed to make programming in minecraft easier and faster. It is heavily based around the
 vanilla commands, and it not a replacement for them. It simply adds ease of use and more functionality.
 
+######Disclaimer:<br>Mitsuko and RemRemEgg are in no way affiliated or endorsed by Mincraft or Mojang Studios, Mitsuko is a fan-make project. Please no sue.
+
 > Notice:
 >
 > Items prefixed with a '»' are *going* to be added, but are not currently functioning. Items prefaced with a '«' are going to be removed in a future version.
