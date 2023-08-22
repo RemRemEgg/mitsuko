@@ -2,10 +2,10 @@
 
 use std::cmp::min;
 use std::ffi::OsStr;
-use std::fs::{Metadata, read_dir, ReadDir, remove_dir_all};
+use std::fs::{read_dir, ReadDir, remove_dir_all};
 use crate::{*, server::*};
 use crate::compile::require;
-use crate::minecraft::CachedType::{Changed, Recompile, Unchanged};
+use crate::minecraft::CachedType::{Recompile, Unchanged};
 
 pub struct Datapack {
     meta: Meta,
@@ -194,7 +194,7 @@ impl Datapack {
         }
     }
 
-    pub fn move_clear(&self, mov: Option<String>, clear: bool) {
+    pub fn _move_clear(&self, mov: Option<String>, clear: bool) {
         if let Err(message) = read_dir(self.root("")) {
             error(join!["Failed to copy datapack: ", &*message.to_string()]);
         } else {
@@ -414,7 +414,7 @@ impl Namespace {
 
     fn process_item_file(&mut self, file: &mut String, lines: &mut Vec<String>, o_cache: &mut MskCache) {
         qc!(self.meta.vb > 0, status(join!["Processing item file '", &*file.form_foreground(str::BLU), "'"]), ());
-        let mut item = Item::new(file, lines, self, o_cache);
+        let item = Item::new(file, lines, self, o_cache);
         unsafe {
             let value = join![&*self.id, ":", &*item.function.get_path().to_string()];
             if KNOWN_FUNCTIONS.contains(&value) {
@@ -434,11 +434,7 @@ impl Namespace {
     fn extend_path(&self, loc: &str) -> String {
         join![unsafe {&*DATAROOT}, &*self.id, "/", loc]
     }
-
-    fn file(&self, loc: &str) -> MFile {
-        MFile::new(self.extend_path(loc))
-    }
-
+    
     fn save(&mut self, cache: bool) {
         if self.loaded_files.is_attached() && cache {
             for (_, _, ref mut cache) in self.loaded_files.as_mut()[0].iter_mut() {
@@ -946,7 +942,6 @@ impl Link {
 
 pub type MSKFiles = Vec<(String, Vec<String>, MskCache)>;
 pub type CacheFiles = Vec<(Vec<u8>, MskCache)>;
-pub type FragFiles = Vec<(String, Vec<u8>, CachedFrag)>;
 pub type SaveFiles = Vec<(String, Vec<String>)>;
 
 pub enum MCValue {
@@ -1051,7 +1046,7 @@ impl Item {
         };
 
         if item.cached_type == Unchanged {
-            let mut frag = CachedFrag::from_path("_EXTERN", &item.cache);
+            let frag = CachedFrag::from_path("_EXTERN", &item.cache);
             item.cache.extern_frag.attach(frag);
             return item;
         }
@@ -1062,7 +1057,7 @@ impl Item {
             ln += rem;
         }
 
-        let mut frag = CachedFrag::new(join![&*item.cache.file_path, "/_EXTERN"]);
+        let frag = CachedFrag::new(join![&*item.cache.file_path, "/_EXTERN"]);
         item.function.fragment.attach(frag.clone());
         item.cache.extern_frag.attach(frag);
 

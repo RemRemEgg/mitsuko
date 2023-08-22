@@ -3,7 +3,7 @@
 use std::cmp::min;
 use std::fmt::Debug;
 
-use crate::{CachedFrag, compile, death_error, error, format_out, join, MCFunction, qc, SaveFiles};
+use crate::{compile, death_error, error, format_out, join, MCFunction, qc, SaveFiles};
 use crate::compile::require;
 use crate::NodeType::{Command, Comment, FnCall, Scoreboard};
 use crate::server::Blocker;
@@ -49,10 +49,10 @@ impl Node {
         }
     }
     
-    pub fn tree_size(&self, mut current: u64) -> u64 {
+    pub fn _tree_size(&self, mut current: u64) -> u64 {
         for n in self.children.iter() {
             current += 1;
-            n.tree_size(current);
+            n._tree_size(current);
         }
         current
     }

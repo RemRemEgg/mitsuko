@@ -7,7 +7,7 @@ use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::{io, vec};
 use std::io::Write;
-use std::ops::{Add, Deref, DerefMut};
+use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use crate::*;
 use crate::CachedType::*;
@@ -25,7 +25,6 @@ pub static mut I_CACHED_MSK: CacheFiles = vec![];
 pub static mut SUPPRESS_WARNINGS: bool = false;
 pub static mut KNOWN_FUNCTIONS: Vec<String> = vec![];
 pub static mut EXPORT_FUNCTIONS: Vec<String> = vec![];
-pub static mut ALIAS_FUNCTIONS: Vec<(String, String, String)> = vec![];
 pub static mut HIT_ERROR: i32 = 0;
 
 pub mod errors {
@@ -302,7 +301,7 @@ fn direntry_to_name_loc(dir: &DirEntry, offset: usize) -> String {
 
 pub fn path_without_functions(path: String) -> String {
     if path.ends_with("functions") {
-        let mut t = path.rsplit_once("functions").unwrap_or(("", "")).0;
+        let t = path.rsplit_once("functions").unwrap_or(("", "")).0;
         t.trim_end_matches(|c| c == '/' || c == '\\').into()
     } else {
         path
@@ -328,7 +327,7 @@ pub fn get_cli_args() -> (String, String, bool, bool) {
                 pck.pop();
             }
             
-            let mut matching = |arg: String, mut args: &mut vec::IntoIter<String>| {
+            let mut matching = |arg: String, args: &mut vec::IntoIter<String>| {
                 match &*arg {
                     "--gen-output" | "-g" => mov = args.next(),
                     "--export" | "-e" => exp = true,
@@ -590,10 +589,6 @@ impl<T> Magnet<T> {
         }
     }
 
-    pub fn blank() -> Magnet<T> {
-        Unattached
-    }
-
     pub fn value(&mut self) -> Option<&mut T> {
         match self {
             Attached(v) => Some(v),
@@ -776,7 +771,7 @@ impl CachedFrag {
     }
 
     pub fn make_frag(name: String, cache: &MskCache) -> Self {
-        let mut frag = Self::new(qc!(cache.file_path == "pack", cache.file_path.to_string(), 
+        let frag = Self::new(qc!(cache.file_path == "pack", cache.file_path.to_string(), 
                 join![&*cache.file_path, "/", &*name.replace("/", "$")]));
         frag
     }
@@ -786,11 +781,6 @@ impl CachedFrag {
         node.lines.hash(&mut hasher);
         self.hash = hasher.finish();
         self.size = node.lines.len() as u64;
-    }
-
-    pub fn cache_path_to_frag_path(path: &DirEntry) -> String {
-        let mut s = path.path().to_string_lossy().to_string();
-        s[..s.len() - 6].to_string()
     }
 
     pub fn from_path(name: &str, cache: &MskCache) -> Self {
