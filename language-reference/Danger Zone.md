@@ -39,7 +39,7 @@ Displays a tree view of the next node AST, before it's compiled
 ## Optimizations
 
 Mitsuko supports three levels of optimizations: Off [0], Mild [1], Strong [2], Experimental [3]. The level can be set
-through the `optimization_level` [tag](File Structure.md#tags).
+through the `optimization_level` [tag](File%20Structure.md#tags).
 
 **Off**: Will not optimize code.
 

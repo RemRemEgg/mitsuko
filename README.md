@@ -24,17 +24,17 @@ are going to be removed in a future version*
 ## List of Reference Files
 
 * [README](README.md)<br>&emsp; General information about Mitsuko
-* [language-reference/File Structure](language-reference/File Structure.md)<br>&emsp; File structure and how to set up a
+* [language-reference/File Structure](language-reference/File%20Structure.md)<br>&emsp; File structure and how to set up a
   project, `pack.mcmeta` tags
-* [language-reference/Functions and Flow Control](language-reference/Functions and Flow Control.md)<br>&emsp; Function
+* [language-reference/Functions and Flow Control](language-reference/Functions%20and%20Flow%20Control.md)<br>&emsp; Function
   structure and examples, Flow control
-* [language-reference/Event Links](language-reference/Event Links.md)<br>&emsp; Event link methodology and syntax
+* [language-reference/Event Links](language-reference/Event%20Links.md)<br>&emsp; Event link methodology and syntax
 * [language-reference/Items](language-reference/Items.md)<br>&emsp; Item file layout and syntax
 * [language-reference/Remgine](language-reference/Remgine.md)<br>&emsp; How Remgine interacts with Mitsuko, how to use
   it, Remgine exclusive commands
 * [language-reference/Utilities](language-reference/Utilities.md)<br>&emsp; Special commands and syntax that Mitsuko
   adds
-* [language-reference/Danger Zone](language-reference/Danger Zone.md)<br>&emsp; The Dangerous and experimental features
+* [language-reference/Danger Zone](language-reference/Danger%20Zone.md)<br>&emsp; The Dangerous and experimental features
   of Mitsuko
 
 ## What is Mitsuko?

@@ -114,7 +114,7 @@ is `#[<name> = <value>]`, and in `pack.msk` it is `<name> = <value>`.
 ## Function Files
 
 Function files get compiled into a variety of `.mcfunction`s. They are located in the `/src/<namespace>/functions/`
-folder. [language-reference/Functions and Flow Control](Functions and Flow Control.md)
+folder. [language-reference/Functions and Flow Control](Functions%20and%20Flow%20Control.md)
 
 ## Item Files
 
@@ -124,7 +124,7 @@ hassle. They are located in the `/src/<namespace>/items/` folder. [language-refe
 ## Event Link Files
 
 Event Link files get compiled into function tags. These can be used to link events from multiple datapacks together.
-They are located in the `/src/<namespace>/event_links/` folder. [language-reference/Event Links](Event Links.md)
+They are located in the `/src/<namespace>/event_links/` folder. [language-reference/Event Links](Event%20Links.md)
 
 ## »Advancement Files
 
