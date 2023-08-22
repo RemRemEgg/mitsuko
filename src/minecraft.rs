@@ -1,28 +1,28 @@
 // craftmine ong :krill:
 
 use std::cmp::min;
-use std::fs::{read_dir, ReadDir, remove_dir_all};
+use std::ffi::OsStr;
+use std::fs::{Metadata, read_dir, ReadDir, remove_dir_all};
 use crate::{*, server::*};
 use crate::compile::require;
+use crate::minecraft::CachedType::{Changed, Recompile, Unchanged};
 
 pub struct Datapack {
     meta: Meta,
     ln: usize,
     pub namespaces: Vec<Namespace>,
     pub src_loc: String,
+    pub pack_frag: Magnet<MskCache>,
 }
 
 impl Datapack {
     pub fn new(path: String) -> Datapack {
-        unsafe {
-            SRC = path.clone();
-            SRC.push_str("/src");
-        }
         Datapack {
             meta: Meta::new(),
             ln: 1,
             src_loc: path,
             namespaces: vec![],
+            pack_frag: Magnet::Unattached,
         }
     }
 
@@ -30,9 +30,10 @@ impl Datapack {
         self.meta.view_name.clone()
     }
 
-    pub fn gen_meta(&mut self, pack: String) {
+    pub fn gen_meta(&mut self, pack: String, cache: bool) {
         self.meta.view_name = self.src_loc.clone();
-        let tags = pack.split("\n").collect::<Vec<&str>>();
+        let bind = pack.clone();
+        let tags = bind.split("\n").collect::<Vec<&str>>();
 
         for tag in tags {
             if tag.trim().is_empty() { continue; }
@@ -43,6 +44,43 @@ impl Datapack {
             let s = tag.trim().split("=").collect::<Vec<&str>>();
             self.meta.set_property(s[0].trim(), s[1].trim(), true, ("pack".into(), self.ln));
             self.ln += 1;
+        }
+        if cache {
+            for file in read_dir(join![&*self.src_loc, "/src/"]).unwrap() {
+                if let Ok(dir) = file {
+                    if dir.file_name() == OsStr::new("pack.msk") {
+                        let node = Node {
+                            node: NodeType::None,
+                            children: vec![],
+                            lines: bind.split("\n").map(String::from).collect(),
+                            ln: 0,
+                        };
+                        self.pack_frag.attach(MskCache::from_msk(&dir));
+                        self.pack_frag.extern_frag.attach(CachedFrag::new("pack".into()));
+                        self.pack_frag.extern_frag.update_hash(&node);
+                        self.pack_frag.extern_frag.files.attach(vec![("pack".to_string(), node.lines)]);
+                        break;
+                    }
+                }
+            }
+            unsafe {
+                let mut irem = None;
+                'caches: for (i, (_, i_cache)) in I_CACHED_MSK.iter().enumerate() {
+                    if i_cache.file_path.eq("pack".into()) {
+                        irem = Some(i);
+                        let cached_type = i_cache.compare_to(&self.pack_frag);
+                        if cached_type != Unchanged {
+                            status_color("[!] pack.msk was changed, clearing cache".into(), str::GRY);
+                            I_CACHED_MSK.clear();
+                            irem = None;
+                        }
+                        break 'caches;
+                    }
+                }
+                if let Some(i) = irem {
+                    I_CACHED_MSK.remove(i);
+                }
+            }
         }
     }
 
@@ -92,43 +130,22 @@ impl Datapack {
     }
 
     pub fn root(&self, loc: &str) -> String {
-        join![&*self.src_loc, "/generated/", &*self.meta.view_name, loc]
+        join![unsafe{&*GEN_LOC}, "/", &*self.meta.view_name, loc]
     }
 
     pub fn data(&self, loc: &str) -> String {
-        join![&*self.src_loc, "/generated/", &*self.meta.view_name, "/data/", loc]
+        join![unsafe{&*GEN_LOC}, "/", &*self.meta.view_name, "/data/", loc]
     }
 
-    pub fn save(&mut self) {
+    pub fn save(&mut self, gen: String, cache: bool) {
         status(format!("Saving '{}'", &self.meta.view_name.form_foreground(str::PNK)));
 
         unsafe {
+            GEN_LOC = gen;
             DATAROOT = self.data("");
-            ALIAS_FUNCTIONS.iter().for_each(|(ns, na, fnc)| {
-                let added = self.namespaces.iter_mut().any(|tns| -> bool {
-                    if tns.id.eq(ns) {
-                        let mut mcf = MCFunction::new("".into(), na.clone(), 0, &tns);
-                        mcf.node.as_mut().unwrap().lines = vec![fnc.into()];
-                        mcf.compile();
-                        tns.functions.push(mcf);
-                        true
-                    } else {
-                        false
-                    }
-                });
-                if !added {
-                    if let Some(mut nsnew) = Namespace::new(ns.into(), self.meta.clone()) {
-                        let mut mcf = MCFunction::new("".into(), na.clone(), 0, &nsnew);
-                        mcf.node.as_mut().unwrap().lines = vec![fnc.into()];
-                        mcf.compile();
-                        nsnew.functions.push(mcf);
-                        self.namespaces.push(nsnew);
-                    }
-                }
-            });
+            remove_dir_all(join!["/": &*GEN_LOC, &*self.meta.view_name]).ok();
         }
 
-        remove_dir_all(self.get_dir("/generated")).ok();
         make_folder(&*self.data(""));
 
         let meta = MFile::new(self.root("/pack.mcmeta"));
@@ -137,7 +154,7 @@ impl Datapack {
             .replace("{DESC}", &self.meta.description));
 
         for nsi in 0..self.namespaces.len() {
-            self.namespaces[nsi].save();
+            self.namespaces[nsi].save(cache);
             if read_src(&*join!["/", &*self.namespaces[nsi].id, "/extras"]).is_ok() {
                 copy_dir_all(get_src_dir(&*join!["/", &*self.namespaces[nsi].id, "/extras"]),
                              self.namespaces[nsi].extend_path(""))
@@ -148,17 +165,15 @@ impl Datapack {
         let mut links: Vec<Link> = Vec::new();
         self.namespaces.iter_mut().for_each(|ns| {
             ns.links.iter_mut().for_each(|link| {
-                link.functions = link.functions.clone().into_iter().filter(|flink| {
-                    if !(unsafe {
-                        KNOWN_FUNCTIONS.contains(&qc!(flink.contains(":"), flink.to_string(), join![&*ns.id, ":", &**flink]))
-                    }) {
+                link.functions = link.functions.clone().into_iter().filter(|flink|
+                    !(unsafe {
+                        !KNOWN_FUNCTIONS.contains(&qc!(flink.contains(":"), flink.to_string(), join![&*ns.id, ":", &**flink]))
+                    } && {
                         warn(format_out(&*join!["No such function '", &*flink.form_foreground(str::ORN), "' found for link '", &*link.path.form_foreground(str::BLU), "'"],
                                         &*join![&*ns.id, "/event_links/", &*link.path], link.ln));
-                        false
-                    } else {
                         true
-                    }
-                }).collect();
+                    })
+                ).collect();
             });
             links.append(&mut ns.links);
         });
@@ -167,6 +182,15 @@ impl Datapack {
             let file = MFile::new(self.data(&*join![&*link.path, "/tags/functions/", &*link.name, ".json"]));
             let write = link.functions.clone().into_iter().map(|s| join!["\"", &*s, "\""]).collect::<Vec<String>>();
             file.save(TAG_TEMPLATE.replace("$VALUES$", &*write.join(",\n    ")));
+        }
+
+        unsafe {
+            if cache {
+                for fragment in O_GEN_FRAGMENTS.iter_mut() {
+                    fragment.save_to_file();
+                }
+                self.pack_frag.save_to_file();
+            }
         }
     }
 
@@ -277,7 +301,7 @@ pub struct Namespace {
     links: Vec<Link>,
     items: Vec<Item>,
     meta: Meta,
-    loaded_files: Option<[MSKFiles; 3]>,
+    loaded_files: Magnet<[MSKFiles; 3]>,
 }
 
 impl Namespace {
@@ -297,7 +321,7 @@ impl Namespace {
             links: Vec::new(),
             items: Vec::new(),
             meta,
-            loaded_files: None,
+            loaded_files: Magnet::new(None),
         })
     }
 
@@ -316,7 +340,7 @@ impl Namespace {
         if let Ok(it_f) = self.read_src_ns("/items") {
             files[2] = get_msk_files_split(it_f, 0);
         }
-        self.loaded_files = Some(files);
+        self.loaded_files.attach(files);
     }
 
     fn read_src_ns<T: ToString>(&self, loc: T) -> std::io::Result<ReadDir> {
@@ -324,35 +348,39 @@ impl Namespace {
     }
 
     fn build(&mut self) {
-        let mut files = self.loaded_files.take().unwrap();
-        for (file, lines) in files[1].iter_mut() {
+        let mut files = self.loaded_files.unattach();
+        for (file, lines, _) in files[1].iter_mut() {
             self.process_link_file(file, lines)
         }
-        for (file, lines) in files[0].iter_mut() {
-            MCFunction::process_function_file(self, file, lines);
+        for (file, lines, cache) in files[0].iter_mut() { // function file -> ast
+            MCFunction::process_function_file(self, file, lines, cache);
         }
-        for (file, lines) in files[2].iter_mut() {
-            self.process_item_file(file, lines)
+        for (file, lines, cache) in files[2].iter_mut() {
+            self.process_item_file(file, lines, cache)
         }
         for function in self.functions.iter_mut() {
             unsafe {
-                let value = join![&*self.id, ":", &*function.get_path().trim_start_matches("/").to_string()];
+                let value = join![&*self.id, ":", &*function.get_path().to_string()];
                 if KNOWN_FUNCTIONS.contains(&value) {
-                    error(format_out(&*join!["A function with the name '", &*function.get_path().trim_start_matches("/").form_foreground(str::ORN), "' already exists"], 
+                    error(format_out(&*join!["A function with the name '", &*function.get_path().form_foreground(str::ORN), "' already exists"],
                                      &*function.get_file_loc(), function.ln));
                 } else {
                     KNOWN_FUNCTIONS.push(value);
                     if function.allow_export {
-                        EXPORT_FUNCTIONS.push(join![&*self.id, ":", &*function.get_path().trim_start_matches("/").to_string()]);
+                        EXPORT_FUNCTIONS.push(join![&*self.id, ":", &*function.get_path().to_string()]);
                     }
                 }
             }
         }
+        self.loaded_files.attach(files);
     }
 
     fn compile(&mut self) {
-        for function in self.functions.iter_mut() {
-            function.compile();
+        for function in self.functions.iter_mut() { // ast -> function files
+            function.test_compile();
+        }
+        for item in self.items.iter_mut() { // ast -> function files
+            item.compile();
         }
     }
 
@@ -384,11 +412,22 @@ impl Namespace {
         self.links.append(&mut lks);
     }
 
-    fn process_item_file(&mut self, file: &mut String, lines: &mut Vec<String>) {
+    fn process_item_file(&mut self, file: &mut String, lines: &mut Vec<String>, o_cache: &mut MskCache) {
         qc!(self.meta.vb > 0, status(join!["Processing item file '", &*file.form_foreground(str::BLU), "'"]), ());
-        let item = Item::new(file, lines, self);
-        // item.function.compile();
-        self.functions.push(item.function.clone());
+        let mut item = Item::new(file, lines, self, o_cache);
+        unsafe {
+            let value = join![&*self.id, ":", &*item.function.get_path().to_string()];
+            if KNOWN_FUNCTIONS.contains(&value) {
+                error(format_out(&*join!["A function with the name '", &*item.function.get_path().form_foreground(str::ORN), "' already exists"],
+                                 &*item.function.get_file_loc(), item.function.ln));
+            } else {
+                KNOWN_FUNCTIONS.push(value);
+                if item.function.allow_export {
+                    EXPORT_FUNCTIONS.push(join![&*self.id, ":", &*item.function.get_path().to_string()]);
+                }
+            }
+        }
+
         self.items.push(item);
     }
 
@@ -400,94 +439,156 @@ impl Namespace {
         MFile::new(self.extend_path(loc))
     }
 
-    fn save(&mut self) {
+    fn save(&mut self, cache: bool) {
+        if self.loaded_files.is_attached() && cache {
+            for (_, _, ref mut cache) in self.loaded_files.as_mut()[0].iter_mut() {
+                cache.save_to_file();
+            }
+        }
         let mut files: SaveFiles = vec![];
         for function in self.functions.iter_mut() {
-            files.append(&mut function.get_save_files());
+            if cache {
+                if !function.fragment.is_attached() {
+                    dbg!(function);
+                    continue;
+                }
+                files.append(&mut function.fragment.files.clone());
+                unsafe {
+                    O_GEN_FRAGMENTS.push(function.fragment.unattach());
+                }
+            } else {
+                files.append(&mut function.fragment.files);
+            }
         }
         for save in files {
-            let file = self.file(&*join!["functions/", &*save.0, ".mcfunction"]);
+            let file = MFile::new(join![unsafe {&*DATAROOT}, &*save.0, ".mcfunction"]);
             file.save(save.1.join("\n"));
         }
 
-        for item in self.items.iter() {
-            let mut write_recipe = RECIPE_TEMPLATE.to_string().replace("$PATTERN$", &*item.recipe.join(",\n    "));
-            let mut mats = vec![];
-            for mat in &item.materials {
-                if mat.1.starts_with("#") {
-                    mats.push(MAT_TAG_TEMPLATE.to_string().replace("$ID$", &*mat.0).replace("$TYPE$", &mat.1[1..]));
-                } else {
-                    mats.push(MAT_TEMPLATE.to_string().replace("$ID$", &*mat.0).replace("$TYPE$", &*mat.1));
+        let mut files: SaveFiles = vec![];
+        for item in self.items.iter_mut() {
+            item.save();
+            if cache {
+                if !item.cache.is_attached() {
+                    dbg!(item);
+                    continue;
                 }
+                files.append(&mut item.cache.extern_frag.files.clone());
+                unsafe {
+                    O_GEN_FRAGMENTS.push(item.cache.extern_frag.unattach());
+                }
+                item.cache.save_to_file();
+            } else {
+                files.append(&mut item.cache.extern_frag.files);
             }
-            write_recipe = write_recipe.replace("$MATERIALS$", &*mats.join(",\n    "));
-            let file = self.file(&*join!["recipes/", &*item.fn_call_path, ".json"]);
-            file.save(write_recipe);
-
-            let mut write_adv = qc!(self.meta.version >= 14, ADV_CRAFT_TEMPLATE_120, ADV_CRAFT_TEMPLATE_119).to_string();
-            write_adv = write_adv.replace("$PATH$", &*join![&*self.id, ":", &*item.fn_call_path])
-                .replace("$CALL$", &*join![&*self.id, ":", &*item.fn_call_path]);
-            let file = self.file(&*join!["advancements/", &*item.fn_call_path, ".json"]);
-            file.save(write_adv);
+        }
+        for save in files {
+            let file = MFile::new(join![unsafe {&*DATAROOT}, &*save.0]);
+            file.save(save.1.join("\n"));
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct MCFunction {
-    node: Option<Node>,
+    pub fragment: Magnet<CachedFrag>,
+    pub node: Magnet<Node>,
     pub file_path: String,
-    call_path: String,
-    call_name: String,
+    pub call_path: String,
+    pub call_name: String,
     pub calls: Vec<(String, usize)>,
     pub vars: Vec<(String, String)>,
     pub meta: Meta,
     pub ln: usize,
     pub ns_id: String,
-    allow_export: bool,
+    pub allow_export: bool,
+    pub cached_type: CachedType,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CachedType {
+    Unchanged,
+    Changed,
+    Recompile,
 }
 
 type FileData = (Vec<(String, String)>, (bool, Option<String>), bool);
 
 impl MCFunction {
-    fn process_function_file(ns: &mut Namespace, file: &mut String, lines: &mut Vec<String>) {
+    fn process_function_file(ns: &mut Namespace, file: &mut String, lines: &mut Vec<String>, o_cache: &mut MskCache) {
         let meta = ns.meta.clone();
         qc!(ns.meta.vb > 0, status(join!["Processing function file '", &*file.form_foreground(str::BLU), "'"]), ());
         let mut fns = vec![];
         let mut ln = 1usize;
         let mut data: FileData = (vec![], (false, None), true);
+        let mut extern_lines = vec![];
+
         'lines: loop {
             if lines.len() <= 0 {
                 break 'lines;
             }
-            let (remove, optfn) = MCFunction::scan_function_line(file, lines, ns, ln, &mut data);
+            let (remove, optfn) = MCFunction::scan_function_line(file, lines, ns, ln, &mut data, &mut extern_lines);
             ln += remove;
             *lines = lines[remove..].to_vec();
-            if let Some(mut gn) = optfn {
+            if let Some((mut gn, cache_name)) = optfn {
                 if data.1.0 {
                     let path = data.1.1.unwrap_or(gn.call_name.clone());
                     let (exns, exna) = path.split_once(":").unwrap_or(("minecraft", &*path));
-                    unsafe {
-                        ALIAS_FUNCTIONS.push((exns.into(), exna.into(), join!("function ", &*ns.id, ":", &*gn.get_path().trim_start_matches("/"))));
-                    }
+                    let nnode = Node {
+                        node: NodeType::Alias(exns.into(), exna.into()),
+                        children: vec![],
+                        lines: vec![join!("function ", &*ns.id, ":", &*gn.get_path())],
+                        ln,
+                    };
+                    gn.node.children.push(nnode);
                 }
                 gn.allow_export = data.2;
                 data.1 = (false, None);
                 data.2 = true;
+                let mut fragment = CachedFrag::make_frag(cache_name, o_cache);
+                fragment.update_hash(&gn.node);
+                gn.fragment.attach(fragment);
                 fns.push(gn);
                 ns.meta = meta.clone();
             }
         }
+
+        let mut cached_type = Recompile;
+        let mut extern_frag = CachedFrag::make_frag("_EXTERN".to_string(), o_cache);
+        extern_frag.files = Magnet::new(Some(vec![("_EXTERN".to_string(), extern_lines)]));
+        o_cache.extern_frag.attach(extern_frag);
+        unsafe {
+            let mut irem = None;
+            'caches: for (i, (_, i_cache)) in I_CACHED_MSK.iter().enumerate() {
+                if i_cache.file_path.eq(&join![&*ns.id, "/functions/", &**file].replace("/", "$")) {
+                    irem = Some(i);
+                    cached_type = i_cache.compare_to(o_cache);
+                    break 'caches;
+                }
+            }
+            if let Some(i) = irem {
+                I_CACHED_MSK.remove(i);
+            }
+        }
+
+        fns.iter_mut().for_each(|func| func.cached_type = cached_type.clone());
+
         ns.functions.append(&mut fns);
     }
 
-    fn scan_function_line(file: &String, lines: &Vec<String>, ns: &mut Namespace, ln: usize, data: &mut FileData) -> (usize, Option<MCFunction>) {
+    fn scan_function_line(file: &String, lines: &Vec<String>, ns: &mut Namespace, ln: usize, data: &mut FileData, extern_lines: &mut Vec<String>) -> (usize, Option<(MCFunction, String)>) {
         let rem: usize;
-        let mut optfn: Option<MCFunction> = None;
+        let mut optfn = None;
         let keys: Vec<String> = lines[0].trim().split(" ").map(|x| x.to_string()).collect::<Vec<_>>();
         let fail = "◙".to_string();
         let key_1 = keys.get(0).unwrap_or(&fail);
         match &**key_1 {
+            _ if {
+                if &**key_1 != "" && !key_1.starts_with("//") {
+                    extern_lines.push(lines[0].clone());
+                }
+                false
+            } => { rem = 1; }
             "fn" => {
                 let key_2 = keys.get(1).unwrap_or(&fail);
                 if !(MCFunction::is_valid_fn(key_2) && !key_2.contains(":")) {
@@ -499,7 +600,7 @@ impl MCFunction {
                 }
                 let mut res = MCFunction::extract_from(lines, file, &keys, ns, ln);
                 res.1.vars.append(&mut data.0.clone());
-                optfn = Some(res.1);
+                optfn = Some((res.1, key_2[..key_2.len() - 2].to_string()));
                 rem = res.0;
             }
             "@set" if require::min_args_path(3, &keys, join![&*ns.id, "/functions/", &*file], ln) => {
@@ -587,7 +688,7 @@ impl MCFunction {
         let rem = match b.find_size_vec(lines, (0, lines[0].find("{").unwrap_or(0))) {
             Ok(o) => {
                 if o.0 != Blocker::NOT_FOUND {
-                    lines[1..o.0].clone_into(&mut self.node.as_mut().unwrap().lines);
+                    lines[1..o.0].clone_into(&mut self.node.lines);
                     o.0 + 1
                 } else {
                     death_error(format_out("Unterminated function", &*ns.extend_path(&*self.file_path), ln))
@@ -607,7 +708,8 @@ impl MCFunction {
             call_name = v.1.to_string();
         }
         MCFunction {
-            node: Some(Node::new(NodeType::Root, ln)),
+            fragment: Magnet::new(None),
+            node: Magnet::new(Some(Node::new(NodeType::Root, ln))),
             call_path: path_without_functions(path),
             file_path,
             call_name,
@@ -617,6 +719,7 @@ impl MCFunction {
             ln,
             ns_id: ns.id.clone(),
             allow_export: true,
+            cached_type: Recompile,
         }
     }
 
@@ -764,10 +867,37 @@ impl MCFunction {
         return cds;
     }
 
+    fn test_compile(&mut self) {
+        // recompile => trash data ----------- 
+        // changed   => test vs cache -------- read
+        // unchanged => get files from cache - read
+        if !self.fragment.is_attached() {
+            self.cached_type = Recompile;
+        }
+        if self.cached_type != Recompile {
+            let mut i_frag = CachedFrag::new(self.fragment.name.clone());
+            self.cached_type = Recompile;
+            if i_frag.read_from_file() {
+                if *self.fragment == i_frag {
+                    self.cached_type = Unchanged;
+                    *self.fragment = i_frag;
+                }
+            }
+        }
+        // all types should either be Unchanged or Recompile
+        if self.cached_type != Unchanged {
+            self.compile();
+            self.update_save_files();
+        }
+    }
+
     fn compile(&mut self) {
-        let mut node = self.node.take().unwrap();
+        if !self.fragment.is_attached() {
+            self.fragment.attach(CachedFrag::from_mcfunction(self));
+        }
+        let mut node = self.node.unattach();
         node.generate(self);
-        self.node = Some(node);
+        self.node.attach(node);
     }
 
     pub fn get_file_loc(&self) -> String {
@@ -775,13 +905,24 @@ impl MCFunction {
     }
 
     pub fn get_path(&self) -> String {
-        return join![&*self.call_path, "/", &*self.call_name];
+        return qc! {self.call_path.is_empty(), self.call_name.clone(), join![&*self.call_path, "/", &*self.call_name]};
     }
 
-    fn get_save_files(&mut self) -> SaveFiles {
+    fn update_save_files(&mut self) {
         let mut saves = vec![];
-        self.node.clone().unwrap().get_save_files(&mut saves, &mut vec![], self);
-        saves
+        self.node.clone().unattach().get_save_files(&mut saves, &mut vec![], self);
+        if !self.fragment.is_attached() {
+            status(join!["Cache tried to update save files on a function without a fragment (", &*self.file_path, ")"]);
+            self.fragment.attach(CachedFrag::from_mcfunction(self));
+        }
+        saves.iter_mut().for_each(|f| {
+            if f.0.starts_with("@ALIAS") {
+                f.0.drain(0..6);
+            } else {
+                f.0 = join![&*self.ns_id, "/functions/", &*f.0]
+            }
+        });
+        self.fragment.files = Magnet::new(Some(saves));
     }
 }
 
@@ -803,7 +944,9 @@ impl Link {
     }
 }
 
-pub type MSKFiles = Vec<(String, Vec<String>)>;
+pub type MSKFiles = Vec<(String, Vec<String>, MskCache)>;
+pub type CacheFiles = Vec<(Vec<u8>, MskCache)>;
+pub type FragFiles = Vec<(String, Vec<u8>, CachedFrag)>;
 pub type SaveFiles = Vec<(String, Vec<String>)>;
 
 pub enum MCValue {
@@ -869,24 +1012,49 @@ impl MCValue {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Item {
     recipe: Vec<String>,
     materials: Vec<(String, String)>,
     fn_call_path: String,
     file_name: String,
     function: MCFunction,
+    cache: Magnet<MskCache>,
+    cached_type: CachedType,
 }
 
 impl Item {
-    fn new(name: &String, lines: &mut Vec<String>, ns: &mut Namespace) -> Item {
+    fn new(name: &String, lines: &mut Vec<String>, ns: &mut Namespace, o_cache: &mut MskCache) -> Item {
+        let mut cached_type = Recompile;
+        unsafe {
+            let mut irem = None;
+            'caches: for (i, (_, i_cache)) in I_CACHED_MSK.iter().enumerate() {
+                if i_cache.file_path.eq(&join![&*ns.id, "/items/", &**name].replace("/", "$")) {
+                    irem = Some(i);
+                    cached_type = i_cache.compare_to(o_cache);
+                    break 'caches;
+                }
+            }
+            if let Some(i) = irem {
+                I_CACHED_MSK.remove(i);
+            }
+        }
+
         let mut item = Item {
             recipe: vec![],
             materials: vec![],
             fn_call_path: name.to_string(),
             function: MCFunction::new(name.to_string(), join!["item_", &*name], 0, &ns),
             file_name: name.to_string(),
+            cache: Magnet::Attached(o_cache.pull_data()),
+            cached_type,
         };
+
+        if item.cached_type == Unchanged {
+            let mut frag = CachedFrag::from_path("_EXTERN", &item.cache);
+            item.cache.extern_frag.attach(frag);
+            return item;
+        }
 
         let mut ln = 0;
         while ln < lines.len() {
@@ -894,6 +1062,11 @@ impl Item {
             ln += rem;
         }
 
+        let mut frag = CachedFrag::new(join![&*item.cache.file_path, "/_EXTERN"]);
+        item.function.fragment.attach(frag.clone());
+        item.cache.extern_frag.attach(frag);
+
+        item.function.compile();
 
         item
     }
@@ -936,7 +1109,7 @@ impl Item {
             "path" if require::exact_args(3, &keys, &mut self.function, ln) => {
                 let (path, name) = keys[2].rsplit_once("/").unwrap_or(("", &*keys[2]));
                 self.fn_call_path = keys[2].to_string();
-                self.function.file_path = path.to_string();
+                self.function.file_path = "items".to_string();
                 self.function.call_path = path.to_string();
                 self.function.call_name = name.to_string();
                 1
@@ -953,7 +1126,7 @@ impl Item {
 
                 let (remx, mut nna) = MCFunction::extract_from(&lines[ln..].to_vec(), &self.file_name, &keys, ns, ln);
 
-                if let Some(ref mut node) = nna.node {
+                if let Some(ref mut node) = nna.node.value() {
                     node.lines.insert(0, "{".into());
                     node.lines.append(&mut vec![
                         join!["}"],
@@ -975,5 +1148,38 @@ impl Item {
 
     fn get_path(&self, ns: &Namespace) -> String {
         [&*ns.id, "items", &*self.file_name].join("/")
+    }
+
+    pub fn compile(&mut self) {
+        if self.cached_type != Unchanged {
+            self.function.compile();
+        }
+    }
+
+    pub fn save(&mut self) { // get cache.frag.files and cache all ready
+        if self.cached_type != Unchanged {
+            self.function.update_save_files();
+            self.cache.extern_frag.attach(self.function.fragment.unattach());
+            for file in self.cache.extern_frag.files.iter_mut() {
+                file.0.push_str(".mcfunction");
+            }
+
+            let mut write_recipe = RECIPE_TEMPLATE.to_string().replace("$PATTERN$", &*self.recipe.join(",\n    "));
+            let mut mats = vec![];
+            for mat in &self.materials {
+                if mat.1.starts_with("#") {
+                    mats.push(MAT_TAG_TEMPLATE.to_string().replace("$ID$", &*mat.0).replace("$TYPE$", &mat.1[1..]));
+                } else {
+                    mats.push(MAT_TEMPLATE.to_string().replace("$ID$", &*mat.0).replace("$TYPE$", &*mat.1));
+                }
+            }
+            write_recipe = write_recipe.replace("$MATERIALS$", &*mats.join(",\n    "));
+            self.cache.extern_frag.files.push((join![&*self.function.ns_id, "/recipes/", &*self.fn_call_path, ".json"], vec![write_recipe]));
+
+            let mut write_adv = qc!(self.function.meta.version >= 14, ADV_CRAFT_TEMPLATE_120, ADV_CRAFT_TEMPLATE_119).to_string();
+            write_adv = write_adv.replace("$PATH$", &*join![&*self.function.ns_id, ":", &*self.fn_call_path])
+                .replace("$CALL$", &*join![&*self.function.ns_id, ":", &*self.fn_call_path]);
+            self.cache.extern_frag.files.push((join![&*self.function.ns_id, "/advancements/", &*self.fn_call_path, ".json"], vec![write_adv]));
+        }
     }
 }

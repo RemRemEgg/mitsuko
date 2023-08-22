@@ -3,7 +3,7 @@
 use std::cmp::min;
 use std::fmt::Debug;
 
-use crate::{compile, death_error, error, format_out, join, MCFunction, qc, SaveFiles};
+use crate::{CachedFrag, compile, death_error, error, format_out, join, MCFunction, qc, SaveFiles};
 use crate::compile::require;
 use crate::NodeType::{Command, Comment, FnCall, Scoreboard};
 use crate::server::Blocker;
@@ -13,7 +13,7 @@ pub struct Node {
     pub node: NodeType,
     pub children: Vec<Node>,
     pub lines: Vec<String>,
-    pub(crate) ln: usize,
+    pub ln: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -27,6 +27,8 @@ pub enum NodeType {
     FnCall(String),
 
     Comment,
+    
+    Alias(String, String)
 }
 
 impl NodeType {
@@ -45,6 +47,14 @@ impl Node {
         for child in self.children.iter() {
             child.print_tree(idlvl + 1);
         }
+    }
+    
+    pub fn tree_size(&self, mut current: u64) -> u64 {
+        for n in self.children.iter() {
+            current += 1;
+            n.tree_size(current);
+        }
+        current
     }
 
     pub fn new(ty: NodeType, ln: usize) -> Node {
@@ -90,6 +100,10 @@ impl Node {
                         self.add_to_files(files, path.into(), &mut blines, mcf);
                     }
                 }
+            }
+            
+            Alias(exns, exna) => {
+                files.push((join!["@ALIAS", &*exns, "/functions/", &*exna], self.lines.drain(..).collect()));
             }
 
             Command => {
@@ -142,7 +156,7 @@ impl Node {
                 compile::node_text(self, mcf);
             }
 
-            None | Comment => {}
+            None | Comment | Alias(_, _) => {}
         }
         self.generate_children(mcf);
     }

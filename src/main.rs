@@ -8,20 +8,28 @@ mod minecraft;
 mod compile;
 
 use std::{env, fs};
+use std::any::Any;
+use std::fs::remove_dir_all;
+use std::path::Path;
 use std::process::exit;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use server::*;
 use ast::*;
 use minecraft::*;
-use server::get_cli_args;
+use server::*;
 
 static CURRENT_PACK_VERSION: u8 = 15;
+/**projects/NDL/src*/
 static mut SRC: String = String::new();
+/**projects/NDL*/
+static mut PROJECT_ROOT: String = String::new();
 static MITSUKO: &str = include_str!("mitsuko.txt");
 
-//todo add bundling
-//todo -c warns on folder not found
-//todo add for & while to ref
+//todo
+//  cache warnings, warnings stop caches
+//  find_rapid_close for mcf
+//  cross-platform files
+//  add multi datapack bundling
 
 fn main() {
     let mut times = (Instant::now(), Instant::now(), Instant::now(), Instant::now());
@@ -30,20 +38,30 @@ fn main() {
     let msg = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(Duration::from_millis(0)).as_micros() as usize % msgs.len();
     status(join![&*join!["[Mitsuko: ", msgs[msg].trim(), "]"].form_background(str::GRY), " ", &*env::args().collect::<Vec<String>>()[1..].join(" ").form_foreground(str::GRY)]);
 
-    let (path, mov, clear, export) = get_cli_args();
+    let (path, gen, export, cache) = get_cli_args();
+
+    unsafe {
+        PROJECT_ROOT = path.clone();
+        SRC = path.clone();
+        SRC.push_str("/src");
+    }
+    
+    if cache {
+        read_cached_data(&*path);
+    }
 
     let mut data = Datapack::new(path);
 
     //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     times.1 = Instant::now();
 
-    status(["Compiling '", &*data.src_loc.form_foreground(str::PNK), "'"].join(""));
+    status(["Building '", &*data.src_loc.form_foreground(str::PNK), "'"].join(""));
 
     let pack = fs::read_to_string(join![&*data.src_loc, "/src/pack.msk"]).unwrap_or_else(|e| {
         death_error_type(join!("Could not read '",&*"pack.msk".form_foreground(str::ORN),"' (", &*e.to_string(), ")"), errors::NO_PACK_MSK);
     });
 
-    data.gen_meta(pack);
+    data.gen_meta(pack, cache);
     stop_if_errors();
 
     data.read_namespaces();
@@ -58,10 +76,9 @@ fn main() {
     //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     times.3 = Instant::now();
 
-    data.save();
-    if mov.is_some() {
-        data.move_clear(mov, clear);
-    }
+    remove_dir_all(join![&*data.src_loc, "/.cache"]).ok();
+
+    data.save(gen, cache);
     if export {
         data.export();
     }

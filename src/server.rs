@@ -1,11 +1,17 @@
 // i need more than just programming help
 
+use std::collections::hash_map::DefaultHasher;
 use std::fs::{DirEntry, File, read_dir, ReadDir};
 use std::ffi::OsStr;
-use std::io;
+use std::fmt::Debug;
+use std::hash::{Hash, Hasher};
+use std::{io, vec};
 use std::io::Write;
+use std::ops::{Add, Deref, DerefMut};
 use std::path::Path;
 use crate::*;
+use crate::CachedType::*;
+use crate::Magnet::{Attached, Unattached};
 
 pub static COMMANDS: [&str; 65] = ["return", "advancement", "attribute", "bossbar", "clear", "clone", "data", "datapack", "debug", "defaultgamemode", "difficulty",
     "effect", "enchant", "execute", "experience", "fill", "forceload", "function", "gamemode", "gamerule", "give", "help", "kick", "kill",
@@ -14,6 +20,8 @@ pub static COMMANDS: [&str; 65] = ["return", "advancement", "attribute", "bossba
     "tell", "tellraw", "time", "title", "tm", "tp", "trigger", "weather", "worldborder", "xp", "jfr", "place", "fillbiome", "ride", "damage"];
 
 static mut WARNINGS: Vec<String> = vec![];
+pub static mut O_GEN_FRAGMENTS: Vec<CachedFrag> = vec![];
+pub static mut I_CACHED_MSK: CacheFiles = vec![];
 pub static mut SUPPRESS_WARNINGS: bool = false;
 pub static mut KNOWN_FUNCTIONS: Vec<String> = vec![];
 pub static mut EXPORT_FUNCTIONS: Vec<String> = vec![];
@@ -22,7 +30,7 @@ pub static mut HIT_ERROR: i32 = 0;
 
 pub mod errors {
     pub const UNKNOWN_ERROR: i32 = -86;
-    pub const BAD_CLI_ARGS: i32 = 10;
+    pub const BAD_CLI_OPTIONS: i32 = 10;
     pub const TOO_MANY_ERRORS: i32 = 20;
     pub const NO_PACK_MSK: i32 = 30;
     pub const IMPORT_NOT_FOUND: i32 = 40;
@@ -74,6 +82,10 @@ pub fn death_error_type(message: String, etype: i32) -> ! {
     exit(etype);
 }
 
+pub fn soft_error(message: String) {
+    eprintln!("{}", join!("!   [", &*"Soft Error".form_foreground(String::RED).form_italic().form_bold(), "] ", &*message));
+}
+
 pub fn error(message: String) {
     unsafe { HIT_ERROR += 1 }
     eprintln!("{}", join!("⮾   [", &*"Error".form_foreground(String::RED).form_italic().form_bold(), "] ", &*message));
@@ -93,8 +105,11 @@ pub fn debug(message: String) {
 
 #[macro_export]
 macro_rules! join {
-    ( $( $x:expr ),* ) => {
-            [$($x,)*""].join("")
+    ($s:literal:$( $x:expr ),*) => {
+            [$($x,)*""].join($s)
+    };
+    ( $( $y:expr ),* ) => {
+            [$($y,)*""].join("")
     };
 }
 
@@ -164,6 +179,7 @@ pub static MAT_TEMPLATE: &str = r#""$ID$": {"item": "minecraft:$TYPE$"}"#;
 pub static MAT_TAG_TEMPLATE: &str = r#""$ID$": {"tag": "minecraft:$TYPE$"}"#;
 
 pub static mut DATAROOT: String = String::new();
+pub static mut GEN_LOC: String = String::new();
 
 pub fn read_src<T: ToString>(loc: T) -> io::Result<ReadDir> {
     read_dir(get_src_dir(loc))
@@ -179,7 +195,7 @@ pub fn make_folder(path: &str) {
     });
 }
 
-pub(crate) fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<()> {
+pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<()> {
     fs::create_dir_all(&dst)?;
     for entry in read_dir(src)? {
         let entry = entry?;
@@ -212,10 +228,15 @@ impl MFile {
         self.file.write_all(write.to_string().as_bytes())
             .expect(&*join!["Could not make '\x1b[93m", &*self.path, "\x1b[m'"]);
     }
+
+    pub fn save_bytes(mut self, write: &[u8]) {
+        self.file.write_all(write)
+            .expect(&*join!["Could not make '\x1b[93m", &*self.path, "\x1b[m'"]);
+    }
 }
 
-pub fn get_msk_files_split(msk_f: ReadDir, offset: usize) -> Vec<(String, Vec<String>)> {
-    let mut out = vec![];
+pub fn get_msk_files_split(msk_f: ReadDir, offset: usize) -> MSKFiles {
+    let mut out: MSKFiles = vec![];
     for dir_r in msk_f {
         if dir_r.is_err() {
             error(join!["Failed to read file (", &*dir_r.expect_err("spaghetti").to_string(), ")"]);
@@ -237,12 +258,38 @@ pub fn get_msk_files_split(msk_f: ReadDir, offset: usize) -> Vec<(String, Vec<St
                     .iter()
                     .map(|x| String::from((*x).trim()))
                     .collect::<Vec<String>>();
-                out.push((direntry_to_name_loc(&dir, offset), lines));
+                out.push((direntry_to_name_loc(&dir, offset), lines, MskCache::from_msk(&dir)));
             }
         }
     }
     out.iter_mut().for_each(|mut fl| fl.0 = fl.0.replace('$', "/"));
     out
+}
+
+pub fn get_cache_files(msk_f: ReadDir) -> CacheFiles {
+    let mut cache: CacheFiles = vec![];
+    for dir_r in msk_f {
+        if dir_r.is_err() {
+            error(join!["Failed to read file (", &*dir_r.expect_err("spaghetti").to_string(), ")"]);
+            continue;
+        }
+        let dir = dir_r.unwrap();
+        if dir.path().is_dir() {
+            continue;
+        }
+        let name = dir.file_name();
+        let name = name.to_str().unwrap_or("unknown");
+        if let Some(ext) = dir.path().extension() {
+            if ext.eq("cache") {
+                let lines = fs::read(dir.path()).unwrap_or_else(|e| {
+                    error(join!["Failed to read file '", name, "' (", &*e.to_string(), ")"]);
+                    vec![]
+                });
+                cache.push((lines, MskCache::read_from_file(&dir)));
+            }
+        }
+    }
+    cache
 }
 
 fn direntry_to_name_loc(dir: &DirEntry, offset: usize) -> String {
@@ -255,16 +302,17 @@ fn direntry_to_name_loc(dir: &DirEntry, offset: usize) -> String {
 
 pub fn path_without_functions(path: String) -> String {
     if path.ends_with("functions") {
-        path.rsplit_once("/functions").unwrap_or(("", "")).0.into()
+        let mut t = path.rsplit_once("functions").unwrap_or(("", "")).0;
+        t.trim_end_matches(|c| c == '/' || c == '\\').into()
     } else {
         path
     }
 }
 
-pub fn get_cli_args() -> (String, Option<String>, bool, bool) {
+pub fn get_cli_args() -> (String, String, bool, bool) {
     let mut args = env::args().collect::<Vec<String>>().into_iter();
     args.next();
-    
+
     let mode = args.next().unwrap_or("help".into());
     match &*mode {
         "help" => {
@@ -272,41 +320,75 @@ pub fn get_cli_args() -> (String, Option<String>, bool, bool) {
             exit(0);
         }
         "build" => {
-            let (mut mov, mut clr, mut exp) = (None, false, false);
-            let pck = args.next().unwrap_or_else(|| {
-                death_error_type(join!("No pack specified"), errors::BAD_CLI_ARGS)
-            }).into();
+            let (mut mov, mut exp, mut cah) = (None, false, false);
+            let mut pck = args.next().unwrap_or_else(|| {
+                death_error_type(join!("No pack specified"), errors::BAD_CLI_OPTIONS)
+            }).to_string().replace("\\", "/");
+            while pck.ends_with("/") {
+                pck.pop();
+            }
+            
+            let mut matching = |arg: String, mut args: &mut vec::IntoIter<String>| {
+                match &*arg {
+                    "--gen-output" | "-g" => mov = args.next(),
+                    "--export" | "-e" => exp = true,
+                    "--cache" | "-C" => cah = true,
+                    _ => {
+                        death_error_type(join!("Unknown option '", &*arg, "'"), errors::BAD_CLI_OPTIONS);
+                    }
+                }
+            };
 
             while let Some(arg) = args.next() {
                 match &*arg {
-                    "--move" | "-m" => mov = args.next(),
-                    "--clear" | "-c" => clr = true,
-                    "--export" | "-e" => exp = true,
+                    _ if arg.starts_with("-") && !arg.starts_with("--") => {
+                        let options = arg[1..].split("").collect::<Vec<_>>();
+                        for opt in options {
+                            if opt != "" {
+                                matching(join!["-", &*opt], &mut args);
+                            }
+                        }
+                    }
                     _ => {
-                        death_error_type(join!("Unknown arg '", &*arg, "'"), errors::BAD_CLI_ARGS);
+                        matching(arg, &mut args);
                     }
                 }
             }
 
-            if clr && mov.is_none() {
-                death_error_type("Clear enabled without specifying a location".into(), errors::BAD_CLI_ARGS);
-            }
-
-            (pck, mov, clr, exp)
+            (pck.clone(), mov.unwrap_or(join![&*pck, "/generated"]), exp, cah)
         }
-        _ => {death_error_type(join!("Unknown mode '", &*mode, "', use 'help' to see all available commands"), errors::BAD_CLI_ARGS)}
+        _ => { death_error_type(join!("Unknown mode '", &*mode, "', use 'help' to see all available commands"), errors::BAD_CLI_OPTIONS) }
     }
 }
 
 fn print_help() {
     println!("Usage: mitsuko [MODE] [OPTIONS]");
     println!("Modes:");
-    println!("help\n\tPrints this message");
-    println!("build <pack_location> [options]\n\t{}\n", &*[
-        "(-m | --move) <locations>", "\tMove the compiled pack to <location>/datapacks",
-        "(-c | --clear)", "\tRemove the old datapack at <location>/datapacks",
-        "(-e | --export)", "\tEnable creation of export file"
-    ].join("\n\t"));
+    println!("\thelp\n\t\tPrints this message");
+    println!("\tbuild <pack_location> [options]\n\t\t{}\n", &*[
+        "Builds the specified datapack",
+        "(-g | --gen-output) <location>", "\tChange the generation output to <location>/datapacks",
+        "(-e | --export)", "\tEnable creation of export file",
+        "(-C | --cache)", "\tEnable caching",
+    ].join("\n\t\t"));
+}
+
+pub fn read_cached_data(path: &str) {
+    match read_dir(join![path, "/.cache"]) {
+        Ok(cpath) => {
+            unsafe {
+                I_CACHED_MSK = get_cache_files(cpath);
+            }
+        }
+        Err(_err) => {
+            match Path::try_exists(Path::new(&join![path, "/.cache"])) {
+                Ok(_) => {} //dont care, means the project hasn't been ran with cache before
+                Err(e) => {
+                    soft_error(join!["Failed to read /.cache/, Assuming default (", &*e.to_string(), ")"]);
+                }
+            }
+        }
+    }
 }
 
 pub struct Blocker {
@@ -491,5 +573,290 @@ impl Blocker {
                 }
             }
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Magnet<T> {
+    Attached(T),
+    Unattached,
+}
+
+impl<T> Magnet<T> {
+    pub fn new(value: Option<T>) -> Magnet<T> {
+        match value {
+            Some(v) => Attached(v),
+            None => Unattached,
+        }
+    }
+
+    pub fn blank() -> Magnet<T> {
+        Unattached
+    }
+
+    pub fn value(&mut self) -> Option<&mut T> {
+        match self {
+            Attached(v) => Some(v),
+            Unattached => None,
+        }
+    }
+
+    pub fn unattach(&mut self) -> T {
+        match std::mem::replace(self, Unattached) {
+            Attached(t) => t,
+            Unattached => panic!("Attempted to unattach an unattached magnet"),
+        }
+    }
+
+    pub fn attach(&mut self, value: T) {
+        *self = Attached(value);
+    }
+
+    pub fn is_attached(&self) -> bool {
+        match *self {
+            Attached(_) => true,
+            Unattached => false,
+        }
+    }
+    
+    pub fn pull_data(&mut self) -> Self {
+        match *self {
+            Attached(_) => Attached(self.unattach()),
+            Unattached => Unattached,
+        }
+    }
+}
+
+impl<T> Deref for Magnet<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        match *self {
+            Attached(ref x) => x,
+            Unattached => panic!("Attempted to deref an unattached magnet"),
+        }
+    }
+}
+
+impl<T> DerefMut for Magnet<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        match *self {
+            Attached(ref mut x) => x,
+            Unattached => panic!("Attempted to deref an unattached magnet"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct MskCache {
+    pub timestamp: SystemTime,
+    pub size: u64,
+    pub file_path: String,
+    pub extern_frag: Magnet<CachedFrag>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CachedFrag {
+    pub name: String,
+    pub files: Magnet<SaveFiles>,
+    pub hash: u64,
+    pub size: u64,
+}
+
+impl MskCache {
+    pub fn blank() -> MskCache {
+        MskCache {
+            timestamp: SystemTime::UNIX_EPOCH,
+            size: 0,
+            file_path: "".to_string(),
+            extern_frag: Magnet::new(None),
+        }
+    }
+    
+    pub fn pull_data(&mut self) -> Self {
+        MskCache {
+            timestamp: self.timestamp.clone(),
+            size: self.size,
+            file_path: self.file_path.clone(),
+            extern_frag: self.extern_frag.pull_data(),
+        }
+    }
+
+    pub fn from_msk(file: &DirEntry) -> Self {
+        if let Ok(data) = file.metadata() {
+            let file_path = if let Some(path) = file.path().to_str() { path.to_string() } else {
+                error(join!["Failed to make cache for file '", &*file.path().to_str().unwrap_or(""), "', ", &*file.metadata().err().unwrap().to_string()]);
+                join![unsafe{&*PROJECT_ROOT}, "/src/pack/unknown/unknown.msk"]
+            }
+                [unsafe { &PROJECT_ROOT }.len()..].replace("\\", "/")
+                .rsplit_once(".").unwrap_or(("/src/pack/unknown/unknown", "")).0.to_string();
+            let dur = data.modified().unwrap_or(SystemTime::UNIX_EPOCH).duration_since(UNIX_EPOCH).unwrap_or(Duration::from_millis(0));
+            let m = MskCache {
+                timestamp: UNIX_EPOCH + Duration::from_millis(dur.as_millis() as u64),
+                size: data.len(),
+                file_path: file_path[5..].replace("/", "$"), // pack$functions$functions
+                extern_frag: Magnet::new(None),
+            };
+            m
+        } else {
+            error(join!["Failed to make cache for file '", &*file.path().to_str().unwrap_or(""), "', ", &*file.metadata().err().unwrap().to_string()]);
+            MskCache::blank()
+        }
+    }
+
+    pub fn read_from_file(file: &DirEntry) -> MskCache {
+        let file_path = if let Some(path) = file.path().to_str() { path.to_string() } else {
+            error(join!["Failed to get cache for file '", &*file.path().to_str().unwrap_or(""), "', ", &*file.metadata().err().unwrap().to_string()]);
+            join![unsafe{&*PROJECT_ROOT}, "/.cache/pack$functions$functions.cache"]
+        }.replace("\\", "/");
+        let file_path = file_path.rsplit_once("/").unwrap_or(("", "pack$functions$functions.cache")).1
+            .rsplit_once(".").unwrap_or(("pack$functions$functions", "")).0.to_string();
+        let mut m = MskCache {
+            timestamp: SystemTime::UNIX_EPOCH,
+            size: 0,
+            file_path: file_path.clone(),
+            extern_frag: Magnet::new(None),
+        };
+
+        match fs::read(file.path()) {
+            Ok(mut d_in) => {
+                m.timestamp = SystemTime::UNIX_EPOCH + Duration::from_millis(u128::from_be_bytes(d_in.drain(..16).as_slice().try_into().unwrap_or([0; 16])) as u64);
+                m.size = u64::from_be_bytes(d_in.drain(..8).as_slice().try_into().unwrap_or([0; 8]));
+                m.extern_frag.attach(CachedFrag::from_path("_EXTERN", &m));
+                m
+            }
+            Err(e) => {
+                soft_error(join!["Failed to read cache '", unsafe{&*PROJECT_ROOT}, "/.cache/", &*file_path, ".cache', Assuming default (", &*e.to_string(), ")"]);
+                m
+            }
+        }
+    }
+
+    pub fn save_to_file(&mut self) {
+        let file = MFile::new(unsafe { join![&*PROJECT_ROOT, "/.cache/", &*self.file_path, ".cache"] });
+        let mut write: Vec<u8> = vec![];
+        // pub timestamp: SystemTime,
+        match self.timestamp.duration_since(SystemTime::UNIX_EPOCH) {
+            Ok(dur) => write.extend_from_slice(&dur.as_millis().to_be_bytes()),
+            Err(e) => error(join!["Failed to save cache file '", &*self.file_path, "', ", &*e.to_string()]),
+        }
+        // pub size: u64,
+        write.extend_from_slice(&self.size.to_be_bytes());
+        file.save_bytes(&write[..]);
+
+        if self.extern_frag.is_attached() {
+            let mut fragment = self.extern_frag.unattach();
+            fragment.save_to_file();
+        }
+    }
+
+    pub fn compare_to(&self, other: &Self) -> CachedType {
+        let mut bez = Recompile;
+        if self.size == other.size {
+            if self.timestamp != UNIX_EPOCH && self.timestamp == other.timestamp {
+                bez = Unchanged;
+            }
+        }
+        if bez == Recompile && self.extern_frag.is_attached() {
+            if self.extern_frag != other.extern_frag {
+                bez = Changed;
+            }
+        }
+        bez
+    }
+}
+
+impl CachedFrag {
+    pub fn new(name: String) -> CachedFrag {
+        CachedFrag {
+            name,
+            files: Magnet::new(None),
+            hash: 0,
+            size: 0,
+        }
+    }
+
+    pub fn make_frag(name: String, cache: &MskCache) -> Self {
+        let mut frag = Self::new(qc!(cache.file_path == "pack", cache.file_path.to_string(), 
+                join![&*cache.file_path, "/", &*name.replace("/", "$")]));
+        frag
+    }
+
+    pub fn update_hash(&mut self, node: &Node) {
+        let mut hasher = DefaultHasher::new();
+        node.lines.hash(&mut hasher);
+        self.hash = hasher.finish();
+        self.size = node.lines.len() as u64;
+    }
+
+    pub fn cache_path_to_frag_path(path: &DirEntry) -> String {
+        let mut s = path.path().to_string_lossy().to_string();
+        s[..s.len() - 6].to_string()
+    }
+
+    pub fn from_path(name: &str, cache: &MskCache) -> Self {
+        let mut frag = Self::make_frag(name.to_string(), cache);
+        frag.read_from_file();
+        frag
+    }
+
+    pub fn from_mcfunction(mcf: &MCFunction) -> Self {
+        // pack $functions$functions/fragment
+        // ns_id$file_path$call_path/call_name
+        let mut frag = Self::new(join![&*mcf.ns_id, "$", &*mcf.file_path, "$", &*mcf.call_path, "/", &*mcf.call_name]);
+        frag.update_hash(&mcf.node);
+        dbg!(&mcf);
+        todo!()
+    }
+
+    pub fn read_from_file(&mut self) -> bool {
+        match fs::read(join![unsafe{&*PROJECT_ROOT}, "/.cache/", &*self.name, ".cache.fragment"]) {
+            Ok(mut d_in) => {
+                self.hash = u64::from_be_bytes(d_in.drain(..8).as_slice().try_into().unwrap_or([0; 8]));
+                self.size = u64::from_be_bytes(d_in.drain(..8).as_slice().try_into().unwrap_or([0; 8]));
+                let mut files = vec![];
+                while !d_in.is_empty() {
+                    let name_size = u64::from_be_bytes(d_in.drain(..8).as_slice().try_into().unwrap_or([0; 8]));
+                    let name = String::from_utf8_lossy(d_in.drain(..(name_size as usize)).as_slice()).to_string();
+                    let content_size = u64::from_be_bytes(d_in.drain(..8).as_slice().try_into().unwrap_or([0; 8]));
+                    let content = String::from_utf8_lossy(d_in.drain(..(content_size as usize)).as_slice()).split("\n").map(str::to_string).collect::<Vec<_>>();
+                    files.push((name, content));
+                }
+                self.files.attach(files);
+                true
+            }
+            Err(e) => {
+                soft_error(join!["Failed to read cache fragment '", unsafe{&*PROJECT_ROOT}, "/.cache/", &*self.name, ".cache.fragment', Assuming default (", &*e.to_string(), ")"]);
+                false
+            }
+        }
+    }
+
+    pub fn save_to_file(&mut self) {
+        let file = MFile::new(unsafe { join![&*PROJECT_ROOT, "/.cache/", &*self.name, ".cache.fragment"] });
+        let mut write: Vec<u8> = vec![];
+
+        // pub hash: u64,
+        write.extend_from_slice(&self.hash.to_be_bytes());
+        // pub size: u64,
+        write.extend_from_slice(&self.size.to_be_bytes());
+        // pub files: Magnet<SaveFiles>,
+        // pub type SaveFiles = Vec<(String, Vec<String>)>;
+        if self.files.is_attached() {
+            for (name, lines) in self.files.unattach() {
+                write.extend_from_slice(&(name.len() as u64).to_be_bytes());
+                write.extend_from_slice(&name.into_bytes());
+                let content = lines.join("\n");
+                write.extend_from_slice(&(content.len() as u64).to_be_bytes());
+                write.extend_from_slice(&content.into_bytes());
+            }
+        }
+
+        file.save_bytes(&write[..]);
+    }
+}
+
+impl PartialEq<Self> for CachedFrag {
+    fn eq(&self, other: &Self) -> bool {
+        self.size == other.size && self.hash == other.hash && qc!(self.name.ends_with("/_EXTERN") || self.name.ends_with("pack"), self.files == other.files, true)
     }
 }
