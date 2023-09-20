@@ -27,6 +27,10 @@ static MITSUKO: &str = include_str!("mitsuko.txt");
 //  find_rapid_close for mcf
 //  cross-platform files
 //  add multi datapack bundling
+//  match statement
+//  remove only parts of cache that need to be removed
+//  cache extras folder
+//  option for re-using compiled output for cache
 
 fn main() {
     let mut times = (Instant::now(), Instant::now(), Instant::now(), Instant::now());
