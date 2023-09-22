@@ -253,7 +253,7 @@ fn parse_json_all(text: &mut String, mcf: &mut MCFunction, ln: usize) {
             input.remove(0);
             let mut data = JSONData::new();
             let options = input[0].split(" ").collect::<Vec<_>>();
-            let json = options.first().unwrap_or(&"text").clone();
+            let json = *options.first().unwrap_or(&"text");
             for (idx, mut opt) in options.into_iter().enumerate() {
                 let mut set = true;
                 if opt.starts_with("!") {

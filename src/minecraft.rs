@@ -681,11 +681,11 @@ impl MCFunction {
             return 1;
         }
         let mut b = Blocker::new();
-        let rem = match b.find_size_vec(lines, (0, lines[0].find("{").unwrap_or(0))) {
+        let rem = match b.quick_block_end(lines) {
             Ok(o) => {
-                if o.0 != Blocker::NOT_FOUND {
-                    lines[1..o.0].clone_into(&mut self.node.lines);
-                    o.0 + 1
+                if o != Blocker::NOT_FOUND {
+                    lines[1..o].clone_into(&mut self.node.lines);
+                    o + 1
                 } else {
                     death_error(format_out("Unterminated function", &*ns.extend_path(&*self.file_path), ln))
                 }

@@ -9,9 +9,11 @@ use std::{io, vec};
 use std::io::Write;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
+use std::vec::IntoIter;
 use crate::*;
 use crate::CachedType::*;
 use crate::Magnet::{Attached, Unattached};
+use crate::server::join;
 
 pub static COMMANDS: [&str; 65] = ["return", "advancement", "attribute", "bossbar", "clear", "clone", "data", "datapack", "debug", "defaultgamemode", "difficulty",
     "effect", "enchant", "execute", "experience", "fill", "forceload", "function", "gamemode", "gamerule", "give", "help", "kick", "kill",
@@ -261,7 +263,7 @@ pub fn get_msk_files_split(msk_f: ReadDir, offset: usize) -> MSKFiles {
             }
         }
     }
-    out.iter_mut().for_each(|mut fl| fl.0 = fl.0.replace('$', "/"));
+    out.iter_mut().for_each(|fl| fl.0 = fl.0.replace('$', "/"));
     out
 }
 
@@ -308,7 +310,16 @@ pub fn path_without_functions(path: String) -> String {
     }
 }
 
-pub fn get_cli_args() -> (String, String, bool, bool) {
+#[derive(Default)]
+pub struct CliArgs {
+    pub input: String,
+    pub output: String,
+    pub export: bool,
+    pub cache: bool,
+    pub reuse_output: bool,
+}
+
+pub fn get_cli_args() -> CliArgs {
     let mut args = env::args().collect::<Vec<String>>().into_iter();
     args.next();
 
@@ -319,19 +330,23 @@ pub fn get_cli_args() -> (String, String, bool, bool) {
             exit(0);
         }
         "build" => {
-            let (mut mov, mut exp, mut cah) = (None, false, false);
-            let mut pck = args.next().unwrap_or_else(|| {
+            let mut cliargs = CliArgs::default();
+            cliargs.input = args.next().unwrap_or_else(|| {
                 death_error_type(join!("No pack specified"), errors::BAD_CLI_OPTIONS)
             }).to_string().replace("\\", "/");
-            while pck.ends_with("/") {
-                pck.pop();
+            while cliargs.input.ends_with("/") {
+                cliargs.input.pop();
             }
-            
-            let mut matching = |arg: String, args: &mut vec::IntoIter<String>| {
+            cliargs.output = join![&*cliargs.input, "/generated"];
+
+            let mut matching = |arg: String, args: &mut IntoIter<String>| {
                 match &*arg {
-                    "--gen-output" | "-g" => mov = args.next(),
-                    "--export" | "-e" => exp = true,
-                    "--cache" | "-C" => cah = true,
+                    "--gen-output" | "-g" => cliargs.output = args.next().unwrap_or_else(|| {
+                        death_error_type(join!("No output location specified"), errors::BAD_CLI_OPTIONS)
+                    }),
+                    "--export" | "-e" => cliargs.export = true,
+                    "--cache" | "-C" => cliargs.cache = true,
+                    "--reuse-output" | "-R" => cliargs.reuse_output = true,
                     _ => {
                         death_error_type(join!("Unknown option '", &*arg, "'"), errors::BAD_CLI_OPTIONS);
                     }
@@ -354,7 +369,7 @@ pub fn get_cli_args() -> (String, String, bool, bool) {
                 }
             }
 
-            (pck.clone(), mov.unwrap_or(join![&*pck, "/generated"]), exp, cah)
+            cliargs
         }
         _ => { death_error_type(join!("Unknown mode '", &*mode, "', use 'help' to see all available commands"), errors::BAD_CLI_OPTIONS) }
     }
@@ -456,6 +471,26 @@ impl Blocker {
             if self.string {
                 self.stack.pop();
                 self.string = false;
+            }
+            c += 1;
+        }
+    }
+
+    pub fn quick_block_end(&mut self, lines: &Vec<String>) -> Result<usize, (String, usize)> {
+        let mut c: usize = 0;
+        loop {
+            if c >= lines.len() {
+                return Ok(Blocker::NOT_FOUND);
+            }
+            let line = lines[c].trim();
+            if line.ends_with("{") {
+                self.stack.push('}');
+            } else if line.starts_with("}") {
+                if self.stack.len() > 1 {
+                    self.stack.pop();
+                } else {
+                    return Ok(c);
+                }
             }
             c += 1;
         }
@@ -613,7 +648,7 @@ impl<T> Magnet<T> {
             Unattached => false,
         }
     }
-    
+
     pub fn pull_data(&mut self) -> Self {
         match *self {
             Attached(_) => Attached(self.unattach()),
@@ -666,7 +701,7 @@ impl MskCache {
             extern_frag: Magnet::new(None),
         }
     }
-    
+
     pub fn pull_data(&mut self) -> Self {
         MskCache {
             timestamp: self.timestamp.clone(),

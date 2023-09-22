@@ -24,7 +24,6 @@ static MITSUKO: &str = include_str!("mitsuko.txt");
 
 //todo
 //  cache warnings, warnings stop caches
-//  find_rapid_close for mcf
 //  cross-platform files
 //  add multi datapack bundling
 //  match statement
@@ -39,19 +38,19 @@ fn main() {
     let msg = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(Duration::from_millis(0)).as_micros() as usize % msgs.len();
     status(join![&*join!["[Mitsuko: ", msgs[msg].trim(), "]"].form_background(str::GRY), " ", &*env::args().collect::<Vec<String>>()[1..].join(" ").form_foreground(str::GRY)]);
 
-    let (path, gen, export, cache) = get_cli_args();
+    let args = get_cli_args();
 
     unsafe {
-        PROJECT_ROOT = path.clone();
-        SRC = path.clone();
+        PROJECT_ROOT = args.input.clone();
+        SRC = args.input.clone();
         SRC.push_str("/src");
     }
     
-    if cache {
-        read_cached_data(&*path);
+    if args.cache {
+        read_cached_data(&*args.input);
     }
 
-    let mut data = Datapack::new(path);
+    let mut data = Datapack::new(args.input.clone());
 
     //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     times.1 = Instant::now();
@@ -62,7 +61,7 @@ fn main() {
         death_error_type(join!("Could not read '",&*"pack.msk".form_foreground(str::ORN),"' (", &*e.to_string(), ")"), errors::NO_PACK_MSK);
     });
 
-    data.gen_meta(pack, cache);
+    data.gen_meta(pack, args.cache);
     stop_if_errors();
 
     data.read_namespaces();
@@ -79,8 +78,8 @@ fn main() {
 
     remove_dir_all(join![&*data.src_loc, "/.cache"]).ok();
 
-    data.save(gen, cache);
-    if export {
+    data.save(args.output, args.cache);
+    if args.export {
         data.export();
     }
     stop_if_errors();
