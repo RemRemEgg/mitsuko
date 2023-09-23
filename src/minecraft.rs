@@ -138,8 +138,8 @@ impl Datapack {
     }
 
     pub fn save(&mut self, gen: String, cache: bool) {
-        // remove_dir_all(join![&*data.src_loc, "/.cache"]).ok();
-        
+        remove_dir_all(join![&*self.src_loc, "/.cache"]).ok();
+
         status(format!("Saving '{}'", &self.meta.view_name.form_foreground(str::PNK)));
 
         unsafe {
@@ -152,7 +152,10 @@ impl Datapack {
 
         let meta = MFile::new(self.root("/pack.mcmeta"));
         meta.save(META_TEMPLATE.clone()
-            .replace("{VERS}", &*self.meta.version.to_string())
+            .replace("{VERS}", &*{
+                let (Ok(s) | Err(s)) = self.meta.version.clone().map(|v| v.to_string());
+                s
+            })
             .replace("{DESC}", &self.meta.description));
 
         for nsi in 0..self.namespaces.len() {
@@ -229,7 +232,7 @@ impl Datapack {
 #[derive(Clone, Debug)]
 pub struct Meta {
     pub vb: i32,
-    pub version: u8,
+    pub version: Result<u8, String>,
     pub remgine: bool,
     pub opt_level: u8,
     pub comments: bool,
@@ -248,7 +251,7 @@ impl Meta {
     fn new() -> Meta {
         Meta {
             vb: Meta::VB,
-            version: CURRENT_PACK_VERSION,
+            version: Ok(CURRENT_PACK_VERSION),
             remgine: Meta::REMGINE,
             opt_level: Meta::OPT_LEVEL,
             comments: Meta::COMMENTS,
@@ -263,7 +266,7 @@ impl Meta {
         match property {
             "remgine" if extended => self.remgine = val.to_uppercase().eq("TRUE"),
             "name" if extended => self.view_name = val.to_string(),
-            "version" if extended => self.version = val.parse::<u8>().unwrap_or(CURRENT_PACK_VERSION),
+            "version" if extended => self.version = val.parse::<u8>().map_err(|_| val.to_string()),
             "description" if extended => self.description = val.to_string(),
             "suppress_warnings" if extended => unsafe { SUPPRESS_WARNINGS = val.to_uppercase().eq("TRUE") },
             "remgine" | "name" | "version" | "description" | "suppress_warnings" if !extended => {
@@ -436,7 +439,7 @@ impl Namespace {
     fn extend_path(&self, loc: &str) -> String {
         join![unsafe {&*DATAROOT}, &*self.id, "/", loc]
     }
-    
+
     fn save(&mut self, cache: bool) {
         if self.loaded_files.is_attached() && cache {
             for (_, _, ref mut cache) in self.loaded_files.as_mut()[0].iter_mut() {
@@ -1173,7 +1176,7 @@ impl Item {
             write_recipe = write_recipe.replace("$MATERIALS$", &*mats.join(",\n    "));
             self.cache.extern_frag.files.push((join![&*self.function.ns_id, "/recipes/", &*self.fn_call_path, ".json"], vec![write_recipe]));
 
-            let mut write_adv = qc!(self.function.meta.version >= 14, ADV_CRAFT_TEMPLATE_120, ADV_CRAFT_TEMPLATE_119).to_string();
+            let mut write_adv = qc!(self.function.meta.version.as_ref().is_ok_and(|v| v < &14) , ADV_CRAFT_TEMPLATE_119, ADV_CRAFT_TEMPLATE_120).to_string();
             write_adv = write_adv.replace("$PATH$", &*join![&*self.function.ns_id, ":", &*self.fn_call_path])
                 .replace("$CALL$", &*join![&*self.function.ns_id, ":", &*self.fn_call_path]);
             self.cache.extern_frag.files.push((join![&*self.function.ns_id, "/advancements/", &*self.fn_call_path, ".json"], vec![write_adv]));

@@ -14,11 +14,11 @@ use crate::*;
 use crate::CachedType::*;
 use crate::Magnet::{Attached, Unattached};
 
-pub static COMMANDS: [&str; 65] = ["return", "advancement", "attribute", "bossbar", "clear", "clone", "data", "datapack", "debug", "defaultgamemode", "difficulty",
+pub static COMMANDS: [&str; 66] = ["return", "advancement", "attribute", "bossbar", "clear", "clone", "data", "datapack", "debug", "defaultgamemode", "difficulty",
     "effect", "enchant", "execute", "experience", "fill", "forceload", "function", "gamemode", "gamerule", "give", "help", "kick", "kill",
     "list", "locate", "loot", "me", "msg", "particle", "playsound", "publish", "recipe", "reload", "item", "say", "schedule", "scoreboard",
     "seed", "setblock", "setworldspawn", "spawnpoint", "spectate", "spreadplayers", "stopsound", "summon", "tag", "team", "teammsg", "teleport",
-    "tell", "tellraw", "time", "title", "tm", "tp", "trigger", "weather", "worldborder", "xp", "jfr", "place", "fillbiome", "ride", "damage"];
+    "tell", "tellraw", "time", "title", "tm", "tp", "trigger", "weather", "worldborder", "xp", "jfr", "place", "fillbiome", "ride", "damage", "random"];
 
 static mut WARNINGS: Vec<String> = vec![];
 pub static mut O_GEN_FRAGMENTS: Vec<CachedFrag> = vec![];
@@ -682,6 +682,7 @@ pub struct MskCache {
     pub size: u64,
     pub file_path: String,
     pub extern_frag: Magnet<CachedFrag>,
+    pub cached_frags: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -699,6 +700,7 @@ impl MskCache {
             size: 0,
             file_path: "".to_string(),
             extern_frag: Magnet::new(None),
+            cached_frags: vec![],
         }
     }
 
@@ -708,6 +710,7 @@ impl MskCache {
             size: self.size,
             file_path: self.file_path.clone(),
             extern_frag: self.extern_frag.pull_data(),
+            cached_frags: self.cached_frags.drain(..).collect(),
         }
     }
 
@@ -725,6 +728,7 @@ impl MskCache {
                 size: data.len(),
                 file_path: file_path[5..].replace("/", "$"), // pack$functions$functions
                 extern_frag: Magnet::new(None),
+                cached_frags: vec![],
             };
             m
         } else {
@@ -745,7 +749,19 @@ impl MskCache {
             size: 0,
             file_path: file_path.clone(),
             extern_frag: Magnet::new(None),
+            cached_frags: vec![],
         };
+
+        // for dir_r in msk_f {
+        //     if dir_r.is_err() {
+        //         error(join!["Failed to read file (", &*dir_r.expect_err("spaghetti").to_string(), ")"]);
+        //         continue;
+        //     }
+        //     let dir = dir_r.unwrap();
+        //     if dir.path().is_dir() {
+        //         continue;
+        //     }
+        // }
 
         match fs::read(file.path()) {
             Ok(mut d_in) => {
@@ -850,7 +866,9 @@ impl CachedFrag {
                 true
             }
             Err(e) => {
-                soft_error(join!["Failed to read cache fragment '", unsafe{&*PROJECT_ROOT}, "/.cache/", &*self.name, ".cache.fragment', Assuming default (", &*e.to_string(), ")"]);
+                if self.name.contains("_EXTERN") {
+                    soft_error(join!["Failed to read cache fragment '", unsafe{&*PROJECT_ROOT}, "/.cache/", &*self.name, ".cache.fragment', Assuming default (", &*e.to_string(), ")"]);
+                }
                 false
             }
         }
@@ -882,6 +900,6 @@ impl CachedFrag {
 
 impl PartialEq<Self> for CachedFrag {
     fn eq(&self, other: &Self) -> bool {
-        self.size == other.size && self.hash == other.hash && qc!(self.name.ends_with("/_EXTERN") || self.name.ends_with("pack"), self.files == other.files, true)
+        self.size == other.size && self.hash == other.hash && qc!(self.name.ends_with("/_EXTERN") || self.name.eq("pack"), self.files == other.files, true)
     }
 }
