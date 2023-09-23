@@ -3,10 +3,11 @@
 use std::cmp::min;
 use std::fmt::Debug;
 
-use crate::{compile, death_error, error, format_out, join, MCFunction, qc, SaveFiles};
+use crate::{compile, error, format_out, join, MCFunction, qc, SaveFiles};
 use crate::compile::require;
 use crate::NodeType::{Command, Comment, FnCall, Scoreboard};
-use crate::server::Blocker;
+use crate::server::{Blocker, death_error};
+use crate::server::errors::AST_ERROR;
 
 #[derive(Debug, Clone)]
 pub struct Node {
@@ -347,10 +348,10 @@ impl Node {
                     lines[1..o.0].clone_into(&mut nna.lines);
                     return (o.0 + 1, nna);
                 } else {
-                    death_error(format_out("Unterminated block", &*mcf.get_file_loc(), node.ln))
+                    death_error(format_out("Unterminated block", &*mcf.get_file_loc(), node.ln), AST_ERROR);
                 }
             }
-            Err(e) => death_error(format_out(&*e.0, &*mcf.get_file_loc(), e.1 + node.ln)),
+            Err(e) => death_error(format_out(&*e.0, &*mcf.get_file_loc(), e.1 + node.ln), AST_ERROR),
         }
     }
 }

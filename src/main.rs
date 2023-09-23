@@ -8,7 +8,6 @@ mod minecraft;
 mod compile;
 
 use std::{env, fs};
-use std::fs::remove_dir_all;
 use std::process::exit;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use server::*;
@@ -23,13 +22,12 @@ static mut PROJECT_ROOT: String = String::new();
 static MITSUKO: &str = include_str!("mitsuko.txt");
 
 //todo
-//  cache warnings, warnings stop caches
-//  cross-platform files
-//  add multi datapack bundling
-//  match statement
 //  remove only parts of cache that need to be removed
-//  cache extras folder
+//  cache warnings, warnings stop caches
 //  option for re-using compiled output for cache
+//  cache extras folder
+//  match statement
+//  add multi datapack bundling
 
 fn main() {
     let mut times = (Instant::now(), Instant::now(), Instant::now(), Instant::now());
@@ -58,7 +56,7 @@ fn main() {
     status(["Building '", &*data.src_loc.form_foreground(str::PNK), "'"].join(""));
 
     let pack = fs::read_to_string(join![&*data.src_loc, "/src/pack.msk"]).unwrap_or_else(|e| {
-        death_error_type(join!("Could not read '",&*"pack.msk".form_foreground(str::ORN),"' (", &*e.to_string(), ")"), errors::NO_PACK_MSK);
+        death_error(join!("Could not read '",&*"pack.msk".form_foreground(str::ORN),"' (", &*e.to_string(), ")"), errors::NO_PACK_MSK);
     });
 
     data.gen_meta(pack, args.cache);
@@ -75,8 +73,6 @@ fn main() {
 
     //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     times.3 = Instant::now();
-
-    remove_dir_all(join![&*data.src_loc, "/.cache"]).ok();
 
     data.save(args.output, args.cache);
     if args.export {
@@ -99,7 +95,7 @@ fn stop_if_errors() {
     unsafe {
         if HIT_ERROR != 0 {
             status_color("Aborting due to previous errors [".to_string() + &*HIT_ERROR.to_string() + "]", str::RED);
-            exit(errors::TOO_MANY_ERRORS);
+            exit(errors::UNKNOWN_ERROR);
         }
     }
 }

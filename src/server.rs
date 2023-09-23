@@ -13,7 +13,6 @@ use std::vec::IntoIter;
 use crate::*;
 use crate::CachedType::*;
 use crate::Magnet::{Attached, Unattached};
-use crate::server::join;
 
 pub static COMMANDS: [&str; 65] = ["return", "advancement", "attribute", "bossbar", "clear", "clone", "data", "datapack", "debug", "defaultgamemode", "difficulty",
     "effect", "enchant", "execute", "experience", "fill", "forceload", "function", "gamemode", "gamerule", "give", "help", "kick", "kill",
@@ -32,9 +31,26 @@ pub static mut HIT_ERROR: i32 = 0;
 pub mod errors {
     pub const UNKNOWN_ERROR: i32 = -86;
     pub const BAD_CLI_OPTIONS: i32 = 10;
-    pub const TOO_MANY_ERRORS: i32 = 20;
     pub const NO_PACK_MSK: i32 = 30;
     pub const IMPORT_NOT_FOUND: i32 = 40;
+    pub const AST_ERROR: i32 = 50;
+}
+
+#[macro_export]
+macro_rules! join {
+    ($s:literal:$( $x:expr ),*) => {
+            [$($x,)*""].join($s)
+    };
+    ( $( $y:expr ),* ) => {
+            [$($y,)*""].join("")
+    };
+}
+
+#[macro_export]
+macro_rules! qc {
+    ($s:expr, $t:expr, $f:expr) => {
+        if $s {$t} else {$f}
+    };
 }
 
 pub fn print_warnings(pack: &Datapack) {
@@ -73,11 +89,7 @@ pub fn format_out(message: &str, path: &str, ln: usize) -> String {
         .form_underline().form_foreground(str::GRY)
 }
 
-pub fn death_error(message: String) -> ! {
-    death_error_type(message, errors::UNKNOWN_ERROR);
-}
-
-pub fn death_error_type(message: String, etype: i32) -> ! {
+pub fn death_error(message: String, etype: i32) -> ! {
     error(message);
     status_color("Aborting".into(), str::RED);
     exit(etype);
@@ -102,23 +114,6 @@ pub fn status_color(message: String, color: usize) {
 
 pub fn debug(message: String) {
     println!("\x1b[96m§»\x1b[m   {}", message);
-}
-
-#[macro_export]
-macro_rules! join {
-    ($s:literal:$( $x:expr ),*) => {
-            [$($x,)*""].join($s)
-    };
-    ( $( $y:expr ),* ) => {
-            [$($y,)*""].join("")
-    };
-}
-
-#[macro_export]
-macro_rules! qc {
-    ($s:expr, $t:expr, $f:expr) => {
-        if $s {$t} else {$f}
-    };
 }
 
 pub trait FancyText: ToString {
@@ -263,7 +258,12 @@ pub fn get_msk_files_split(msk_f: ReadDir, offset: usize) -> MSKFiles {
             }
         }
     }
-    out.iter_mut().for_each(|fl| fl.0 = fl.0.replace('$', "/"));
+    out.iter_mut().for_each(|fl| {
+        fl.0 = fl.0.replace('$', "/");
+        fl.1.iter_mut().for_each(|f| {
+            *f = f.trim().trim_start_matches("@NOLEX").trim().to_string();
+        })
+    });
     out
 }
 
@@ -332,7 +332,7 @@ pub fn get_cli_args() -> CliArgs {
         "build" => {
             let mut cliargs = CliArgs::default();
             cliargs.input = args.next().unwrap_or_else(|| {
-                death_error_type(join!("No pack specified"), errors::BAD_CLI_OPTIONS)
+                death_error(join!("No pack specified"), errors::BAD_CLI_OPTIONS)
             }).to_string().replace("\\", "/");
             while cliargs.input.ends_with("/") {
                 cliargs.input.pop();
@@ -342,13 +342,13 @@ pub fn get_cli_args() -> CliArgs {
             let mut matching = |arg: String, args: &mut IntoIter<String>| {
                 match &*arg {
                     "--gen-output" | "-g" => cliargs.output = args.next().unwrap_or_else(|| {
-                        death_error_type(join!("No output location specified"), errors::BAD_CLI_OPTIONS)
+                        death_error(join!("No output location specified"), errors::BAD_CLI_OPTIONS)
                     }),
                     "--export" | "-e" => cliargs.export = true,
                     "--cache" | "-C" => cliargs.cache = true,
                     "--reuse-output" | "-R" => cliargs.reuse_output = true,
                     _ => {
-                        death_error_type(join!("Unknown option '", &*arg, "'"), errors::BAD_CLI_OPTIONS);
+                        death_error(join!("Unknown option '", &*arg, "'"), errors::BAD_CLI_OPTIONS);
                     }
                 }
             };
@@ -371,7 +371,7 @@ pub fn get_cli_args() -> CliArgs {
 
             cliargs
         }
-        _ => { death_error_type(join!("Unknown mode '", &*mode, "', use 'help' to see all available commands"), errors::BAD_CLI_OPTIONS) }
+        _ => { death_error(join!("Unknown mode '", &*mode, "', use 'help' to see all available commands"), errors::BAD_CLI_OPTIONS) }
     }
 }
 
@@ -443,10 +443,10 @@ impl Blocker {
                 if o.0 != Blocker::NOT_FOUND {
                     return o;
                 } else {
-                    death_error(format_out("Unterminated block", &*path, ln))
+                    death_error(format_out("Unterminated block", &*path, ln), errors::AST_ERROR)
                 }
             }
-            Err(e) => death_error(format_out(&*[&*e.0, " /", &path, ":", &*(e.1 + ln).to_string()].join(""), &*path, ln)),
+            Err(e) => death_error(format_out(&*[&*e.0, " /", &path, ":", &*(e.1 + ln).to_string()].join(""), &*path, ln), errors::AST_ERROR),
         }
     }
 

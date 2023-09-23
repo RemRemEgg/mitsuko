@@ -87,7 +87,7 @@ impl Datapack {
     fn import(&self, name: String) {
         unsafe {
             let import = fs::read_to_string(join!["./imports/", &*name, ".export.msk"]).unwrap_or_else(|e| {
-                death_error_type(join!("Could not read '",&*join!["./imports/", &*name, ".export.msk"].form_foreground(str::ORN),"' (", &*e.to_string(), ")"), errors::IMPORT_NOT_FOUND);
+                death_error(join!("Could not read '",&*join!["./imports/", &*name, ".export.msk"].form_foreground(str::ORN),"' (", &*e.to_string(), ")"), errors::IMPORT_NOT_FOUND);
             });
             KNOWN_FUNCTIONS.append(&mut import.split(",").map(|s| s.to_string()).collect());
         }
@@ -138,6 +138,8 @@ impl Datapack {
     }
 
     pub fn save(&mut self, gen: String, cache: bool) {
+        // remove_dir_all(join![&*data.src_loc, "/.cache"]).ok();
+        
         status(format!("Saving '{}'", &self.meta.view_name.form_foreground(str::PNK)));
 
         unsafe {
@@ -672,7 +674,7 @@ impl MCFunction {
                 &*["Expected '{' after \'fn ", &*keys[1], "\'"].join(""),
                 &*ns.extend_path(&*mcf.file_path),
                 ln,
-            ));
+            ), errors::AST_ERROR);
         }
     }
 
@@ -687,10 +689,10 @@ impl MCFunction {
                     lines[1..o].clone_into(&mut self.node.lines);
                     o + 1
                 } else {
-                    death_error(format_out("Unterminated function", &*ns.extend_path(&*self.file_path), ln))
+                    death_error(format_out("Unterminated function", &*ns.extend_path(&*self.file_path), ln), errors::AST_ERROR)
                 }
             }
-            Err(e) => death_error(format_out(&*e.0, &*ns.extend_path(&*self.file_path), e.1 + ln)),
+            Err(e) => death_error(format_out(&*e.0, &*ns.extend_path(&*self.file_path), e.1 + ln), errors::AST_ERROR),
         };
         rem
     }
