@@ -14,7 +14,7 @@ use server::*;
 use ast::*;
 use minecraft::*;
 
-static CURRENT_PACK_VERSION: u8 = 15;
+static CURRENT_PACK_VERSION: u8 = 18;
 /**projects/NDL/src*/
 static mut SRC: String = String::new();
 /**projects/NDL*/
@@ -22,12 +22,15 @@ static mut PROJECT_ROOT: String = String::new();
 static MITSUKO: &str = include_str!("mitsuko.txt");
 
 //todo
+//  macro support
+//  match statement
+//  add multi datapack bundling
+
+//todo caching
+//  cache extras folder
 //  remove only parts of cache that need to be removed
 //  cache warnings, warnings stop caches
 //  option for re-using compiled output for cache
-//  cache extras folder
-//  match statement
-//  add multi datapack bundling
 
 fn main() {
     let mut times = (Instant::now(), Instant::now(), Instant::now(), Instant::now());
