@@ -8,24 +8,6 @@ use crate::{*, server::*};
 use crate::compile::require;
 use crate::minecraft::CachedType::{Recompile, Unchanged};
 
-// trait A {
-//     const GRY: u8 = 0;
-//     const RED: u8 = 1;
-//     const GRN: u8 = 2;
-//     const ORN: u8 = 3;
-//     const BLU: u8 = 4;
-//     const PNK: u8 = 5;
-//     const AQU: u8 = 6;
-//     const WHT: u8 = 7;
-// 
-//     fn foreground(&self, a: u8) -> String {
-//         
-//     }
-// }
-// impl A for String {}
-// impl A for str {}
-// impl A for char {}
-
 pub struct Datapack {
     meta: Meta,
     ln: usize,
