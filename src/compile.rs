@@ -1,6 +1,7 @@
 // bob the builder??? in this filesystem???
 
-use crate::{Blocker, error, format_out, join, MCFunction, MCValue, Node, NodeType, qc};
+use remtools::{*, colors::*};
+use crate::{Blocker, error, format_out, MCFunction, MCValue, Node, NodeType};
 use crate::compile::JSON::*;
 use crate::server::*;
 
@@ -114,7 +115,7 @@ pub fn node_text(node: &mut Node, mcf: &mut MCFunction) {
         FnCall(path) => {
             unsafe {
                 if !KNOWN_FUNCTIONS.contains(path) {
-                    warn(format_out(&*join!["Unknown function '", &*path.form_foreground(str::ORN), "'"], &*mcf.get_file_loc(), node.ln));
+                    warn(format_out(&*join!["Unknown function '", &*path.clone().foreground(ORN).end(), "'"], &*mcf.get_file_loc(), node.ln));
                 }
             }
         }
@@ -196,7 +197,7 @@ pub fn node_condition(node: &mut Node, mut cond: String, mcf: &mut MCFunction) -
                 }
                 _ => {
                     error(format_out(
-                        &*join!("Failed to parse score test, unknown operation '", &*keys[1].form_foreground(str::BLU), "'"),
+                        &*join!("Failed to parse score test, unknown operation '", &*keys[1].clone().foreground(BLU).end(), "'"),
                         &*mcf.get_file_loc(), node.ln));
                 }
             }
@@ -430,8 +431,8 @@ pub fn replace_local_tags(keys: &mut Vec<String>, mcf: &mut MCFunction) {
 
 pub mod require {
     use std::fmt::Display;
-    use crate::{error, format_out, join, MCFunction};
-    use crate::server::FancyText;
+    use remtools::{*, colors::*};
+    use crate::{error, format_out, MCFunction};
 
     pub fn min_args<T: Display>(count: usize, keys: &Vec<T>, mcf: &mut MCFunction, ln: usize) -> bool {
         if keys.len() < count {
@@ -463,7 +464,7 @@ pub mod require {
 
     pub fn remgine(item: &str, mcf: &mut MCFunction, ln: usize) -> bool {
         if !mcf.meta.remgine {
-            error(format_out(&*join!("Remgine is required to use [", &*item.form_foreground(str::AQU), "]"), &*mcf.get_file_loc(), ln))
+            error(format_out(&*join!("Remgine is required to use [", &*item.foreground(AQU).end(), "]"), &*mcf.get_file_loc(), ln))
         }
         mcf.meta.remgine
     }

@@ -5,3 +5,12 @@ version = 3
 [[package]]
 name = "mitsuko"
 version = "0.1.0"
+dependencies = [
+ "remtools",
+]
+
+[[package]]
+name = "remtools"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e17766e088324256a1ab1526022aa6533f824127dd335bcbc0b38bfcc0949b36"

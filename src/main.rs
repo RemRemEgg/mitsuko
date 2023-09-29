@@ -10,6 +10,7 @@ mod compile;
 use std::{env, fs};
 use std::process::exit;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use remtools::{*, colors::*};
 use server::*;
 use ast::*;
 use minecraft::*;
@@ -20,6 +21,24 @@ static mut SRC: String = String::new();
 /**projects/NDL*/
 static mut PROJECT_ROOT: String = String::new();
 static MITSUKO: &str = include_str!("mitsuko.txt");
+
+// trait A {
+//     const GRY: u8 = 0;
+//     const RED: u8 = 1;
+//     const GRN: u8 = 2;
+//     const ORN: u8 = 3;
+//     const BLU: u8 = 4;
+//     const PNK: u8 = 5;
+//     const AQU: u8 = 6;
+//     const WHT: u8 = 7;
+// 
+//     fn foreground(&self, a: u8) -> String {
+//         
+//     }
+// }
+// impl A for String {}
+// impl A for str {}
+// impl A for char {}
 
 //todo
 //  macro support
@@ -37,7 +56,7 @@ fn main() {
     println!();
     let msgs = MITSUKO.split("\n").collect::<Vec<_>>();
     let msg = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(Duration::from_millis(0)).as_micros() as usize % msgs.len();
-    status(join![&*join!["[Mitsuko: ", msgs[msg].trim(), "]"].form_background(str::GRY), " ", &*env::args().collect::<Vec<String>>()[1..].join(" ").form_foreground(str::GRY)]);
+    status(join![&*join!["[Mitsuko: ", msgs[msg].trim(), "]"].background(GRY).end(), " ", &*env::args().collect::<Vec<String>>()[1..].join(" ").foreground(GRY).end()]);
 
     let args = get_cli_args();
 
@@ -56,10 +75,10 @@ fn main() {
     //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     times.1 = Instant::now();
 
-    status(["Building '", &*data.src_loc.form_foreground(str::PNK), "'"].join(""));
+    status(["Building '", &*data.src_loc.clone().foreground(PNK).end(), "'"].join(""));
 
     let pack = fs::read_to_string(join![&*data.src_loc, "/src/pack.msk"]).unwrap_or_else(|e| {
-        death_error(join!("Could not read '",&*"pack.msk".form_foreground(str::ORN),"' (", &*e.to_string(), ")"), errors::NO_PACK_MSK);
+        death_error(join!("Could not read '",&*"pack.msk".foreground(ORN).end(),"' (", &*e.to_string(), ")"), errors::NO_PACK_MSK);
     });
 
     data.gen_meta(pack, args.cache);
@@ -90,14 +109,14 @@ fn main() {
 
     print_warnings(&data);
 
-    status(format!("{} \x1b[96m\x1b[3m[{}/{}/{}/{} ms (s/r/c/w)]\x1b[m", "Done".form_foreground(str::GRN),
+    status(format!("{} \x1b[96m\x1b[3m[{}/{}/{}/{} ms (s/r/c/w)]\x1b[m", "Done".foreground(GRN).end(),
                    time(&times.0), time(&times.1), time(&times.2), time(&times.3)));
 }
 
 fn stop_if_errors() {
     unsafe {
         if HIT_ERROR != 0 {
-            status_color("Aborting due to previous errors [".to_string() + &*HIT_ERROR.to_string() + "]", str::RED);
+            status_color("Aborting due to previous errors [".to_string() + &*HIT_ERROR.to_string() + "]", RED);
             exit(errors::UNKNOWN_ERROR);
         }
     }

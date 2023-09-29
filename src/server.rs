@@ -1,18 +1,16 @@
 // i need more than just programming help
 
 use std::collections::hash_map::DefaultHasher;
-use std::fs::{DirEntry, File, read_dir, ReadDir};
+use std::fs::{DirEntry, read_dir, ReadDir};
 use std::ffi::OsStr;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::{io, vec};
-use std::io::Write;
-use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::vec::IntoIter;
+use remtools::{colors::*, *};
 use crate::*;
 use crate::CachedType::*;
-use crate::Magnet::{Attached, Unattached};
 
 pub static COMMANDS: [&str; 66] = ["return", "advancement", "attribute", "bossbar", "clear", "clone", "data", "datapack", "debug", "defaultgamemode", "difficulty",
     "effect", "enchant", "execute", "experience", "fill", "forceload", "function", "gamemode", "gamerule", "give", "help", "kick", "kill",
@@ -36,22 +34,24 @@ pub mod errors {
     pub const AST_ERROR: i32 = 50;
 }
 
-#[macro_export]
-macro_rules! join {
-    ($s:literal:$( $x:expr ),*) => {
-            [$($x,)*""].join($s)
-    };
-    ( $( $y:expr ),* ) => {
-            [$($y,)*""].join("")
-    };
-}
+// trait A {
+//     const GRY: u8 = 0;
+//     const RED: u8 = 1;
+//     const GRN: u8 = 2;
+//     const ORN: u8 = 3;
+//     const BLU: u8 = 4;
+//     const PNK: u8 = 5;
+//     const AQU: u8 = 6;
+//     const WHT: u8 = 7;
+// 
+//     fn foreground(&self, a: u8) -> String {
+//         
+//     }
+// }
+// impl A for String {}
+// impl A for str {}
+// impl A for char {}
 
-#[macro_export]
-macro_rules! qc {
-    ($s:expr, $t:expr, $f:expr) => {
-        if $s {$t} else {$f}
-    };
-}
 
 pub fn print_warnings(pack: &Datapack) {
     unsafe {
@@ -61,7 +61,7 @@ pub fn print_warnings(pack: &Datapack) {
                 "'{}' Generated {} Warnings",
                 pack.get_view_name(),
                 WARNINGS.len()
-            ).form_foreground(str::ORN));
+            ).foreground(ORN).end());
         }
         if SUPPRESS_WARNINGS {
             SUPPRESS_WARNINGS = false;
@@ -74,97 +74,47 @@ pub fn print_warnings(pack: &Datapack) {
 pub fn warn(message: String) {
     unsafe {
         if !SUPPRESS_WARNINGS {
-            println!("{}", join!("\x1b[93m‼»\x1b[m   [", &*"Warning".form_foreground(String::ORN).form_bold(), "] ", &*message));
+            println!("{}", join!("\x1b[93m‼»\x1b[m   [", &*"Warning".foreground(ORN).modifier(BOLD).end(), "] ", &*message));
         }
         WARNINGS.push(message);
     }
 }
 
 unsafe fn _print_warning(message: String, i: usize) {
-    println!("\x1b[93m‼»\x1b[m   [{}] {}", (i + 1).to_string().form_foreground(str::ORN), message);
+    println!("\x1b[93m‼»\x1b[m   [{}] {}", (i + 1).to_string().foreground(ORN).end(), message);
 }
 
 pub fn format_out(message: &str, path: &str, ln: usize) -> String {
     message.to_string() + " " + &join!["./src/", path, ".msk:", &*ln.to_string(), ""].replace("\\", "/").replace("/.msk", "/functions.msk")
-        .form_underline().form_foreground(str::GRY)
+        .modifier(UNDERLINE).foreground(GRY).end()
 }
 
 pub fn death_error(message: String, etype: i32) -> ! {
     error(message);
-    status_color("Aborting".into(), str::RED);
+    status_color("Aborting".into(), RED);
     exit(etype);
 }
 
 pub fn soft_error(message: String) {
-    eprintln!("{}", join!("!   [", &*"Soft Error".form_foreground(String::RED).form_italic().form_bold(), "] ", &*message));
+    eprintln!("{}", join!("!   [", &*"Soft Error".foreground(RED).modifier(ITALIC).modifier(BOLD).end(), "] ", &*message));
 }
 
 pub fn error(message: String) {
     unsafe { HIT_ERROR += 1 }
-    eprintln!("{}", join!("⮾   [", &*"Error".form_foreground(String::RED).form_italic().form_bold(), "] ", &*message));
+    eprintln!("{}", join!("⮾   [", &*"Error".foreground(RED).modifier(ITALIC).modifier(BOLD).end(), "] ", &*message));
 }
 
 pub fn status(message: String) {
     println!(" »   {}", message);
 }
 
-pub fn status_color(message: String, color: usize) {
-    println!(" »   {}", message.form_foreground(color));
+pub fn status_color(message: String, color: u8) {
+    println!(" »   {}", message.foreground(color).end());
 }
 
 pub fn debug(message: String) {
     println!("\x1b[96m§»\x1b[m   {}", message);
 }
-
-pub trait FancyText: ToString {
-    //ignore
-    const GRY: usize = 0;
-    //errors
-    const RED: usize = 1;
-    //good stuff
-    const GRN: usize = 2;
-    //warns
-    const ORN: usize = 3;
-    //names
-    const BLU: usize = 4;
-    //ns
-    const PNK: usize = 5;
-    //debug
-    const AQU: usize = 6;
-    //unused
-    const WHT: usize = 7;
-
-    fn form_bold(&self) -> String {
-        join!("\x1b[1m", &*self.to_string(), "\x1b[m")
-    }
-    fn form_italic(&self) -> String {
-        join!("\x1b[3m", &*self.to_string(), "\x1b[m")
-    }
-    fn form_underline(&self) -> String {
-        join!("\x1b[4m", &*self.to_string(), "\x1b[m")
-    }
-    fn form_custom(&self, id: usize) -> String {
-        join!("\x1b[", &*id.to_string(), "m", &*self.to_string(), "\x1b[m")
-    }
-    fn form_foreground(&self, id: usize) -> String {
-        join!("\x1b[", &*(90+id).to_string(), "m", &*self.to_string(), "\x1b[m")
-    }
-    fn form_background(&self, id: usize) -> String {
-        join!("\x1b[", &*(100+id).to_string(), "m", &*self.to_string(), "\x1b[m")
-    }
-    fn form_background_custom(&self, r: u8, g: u8, b: u8) -> String {
-        join!("\x1b[48;2;",&*r.to_string(),";",&*g.to_string(),";",&*b.to_string(), "m", &*self.to_string(), "\x1b[m")
-    }
-    fn form_foreground_custom(&self, r: u8, g: u8, b: u8) -> String {
-        join!("\x1b[38;2;",&*r.to_string(),";",&*g.to_string(),";",&*b.to_string(), "m", &*self.to_string(), "\x1b[m")
-    }
-}
-
-impl FancyText for String {}
-
-impl FancyText for str {}
-
-impl FancyText for char {}
 
 pub static META_TEMPLATE: &str = include_str!("pack.mcmeta");
 pub static TAG_TEMPLATE: &str = include_str!("tag.json");
@@ -203,32 +153,6 @@ pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<
         }
     }
     Ok(())
-}
-
-#[derive(Debug)]
-pub struct MFile {
-    pub path: String,
-    pub file: File,
-}
-
-impl MFile {
-    pub fn new(path: String) -> MFile {
-        make_folder(&*path.rsplit_once("/").unwrap_or(("", "")).0);
-        MFile {
-            file: File::create(&*path).expect(&*join!["Could not make '\x1b[93m", &*path, "\x1b[m'"]),
-            path,
-        }
-    }
-
-    pub fn save<T: ToString>(mut self, write: T) {
-        self.file.write_all(write.to_string().as_bytes())
-            .expect(&*join!["Could not make '\x1b[93m", &*self.path, "\x1b[m'"]);
-    }
-
-    pub fn save_bytes(mut self, write: &[u8]) {
-        self.file.write_all(write)
-            .expect(&*join!["Could not make '\x1b[93m", &*self.path, "\x1b[m'"]);
-    }
 }
 
 pub fn get_msk_files_split(msk_f: ReadDir, offset: usize) -> MSKFiles {
@@ -497,6 +421,9 @@ impl Blocker {
     }
 
     pub fn find_size(&mut self, line: &String, offset: usize) -> Result<usize, String> {
+        fn char_error(c: char, l: usize) -> String {
+            format!("Unexpected \'{}{}{}\' ({})", ORN, c, END, l)
+        }
         if line.starts_with("//") || line.starts_with("cmd") || line.starts_with("@NOLEX cmd") {
             return Ok(Blocker::NOT_FOUND);
         }
@@ -517,7 +444,7 @@ impl Blocker {
                     if self.stack.last().eq(&Some(&'{')) {
                         self.stack.pop();
                     } else {
-                        return Err(format!("Unexpected \'{}\' ({})", c.form_foreground(str::ORN), pos));
+                        return Err(char_error(c, pos));
                     }
                 }
                 '(' if !self.string => self.stack.push(c),
@@ -525,7 +452,7 @@ impl Blocker {
                     if self.stack.last().eq(&Some(&'(')) {
                         self.stack.pop();
                     } else {
-                        return Err(format!("Unexpected \'{}\' ({})", c.form_foreground(str::ORN), pos));
+                        return Err(char_error(c, pos));
                     }
                 }
                 '[' if !self.string => self.stack.push(c),
@@ -533,7 +460,7 @@ impl Blocker {
                     if self.stack.last().eq(&Some(&'[')) {
                         self.stack.pop();
                     } else {
-                        return Err(format!("Unexpected \'{}\' ({})", c.form_foreground(str::ORN), pos));
+                        return Err(char_error(c, pos));
                     }
                 }
                 '\'' => {
@@ -606,72 +533,6 @@ impl Blocker {
                     pos += 1;
                 }
             }
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Magnet<T> {
-    Attached(T),
-    Unattached,
-}
-
-impl<T> Magnet<T> {
-    pub fn new(value: Option<T>) -> Magnet<T> {
-        match value {
-            Some(v) => Attached(v),
-            None => Unattached,
-        }
-    }
-
-    pub fn value(&mut self) -> Option<&mut T> {
-        match self {
-            Attached(v) => Some(v),
-            Unattached => None,
-        }
-    }
-
-    pub fn unattach(&mut self) -> T {
-        match std::mem::replace(self, Unattached) {
-            Attached(t) => t,
-            Unattached => panic!("Attempted to unattach an unattached magnet"),
-        }
-    }
-
-    pub fn attach(&mut self, value: T) {
-        *self = Attached(value);
-    }
-
-    pub fn is_attached(&self) -> bool {
-        match *self {
-            Attached(_) => true,
-            Unattached => false,
-        }
-    }
-
-    pub fn pull_data(&mut self) -> Self {
-        match *self {
-            Attached(_) => Attached(self.unattach()),
-            Unattached => Unattached,
-        }
-    }
-}
-
-impl<T> Deref for Magnet<T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        match *self {
-            Attached(ref x) => x,
-            Unattached => panic!("Attempted to deref an unattached magnet"),
-        }
-    }
-}
-
-impl<T> DerefMut for Magnet<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        match *self {
-            Attached(ref mut x) => x,
-            Unattached => panic!("Attempted to deref an unattached magnet"),
         }
     }
 }
@@ -787,7 +648,9 @@ impl MskCache {
         }
         // pub size: u64,
         write.extend_from_slice(&self.size.to_be_bytes());
-        file.save_bytes(&write[..]);
+        file.save_bytes(&write[..]).map_err(|e| {
+            soft_error(e.to_string());
+        }).ok();
 
         if self.extern_frag.is_attached() {
             let mut fragment = self.extern_frag.unattach();
@@ -894,7 +757,9 @@ impl CachedFrag {
             }
         }
 
-        file.save_bytes(&write[..]);
+        file.save_bytes(&write[..]).map_err(|e| {
+            soft_error(e.to_string());
+        }).ok();
     }
 }
 

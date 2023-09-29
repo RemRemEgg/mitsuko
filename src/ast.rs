@@ -2,8 +2,9 @@
 
 use std::cmp::min;
 use std::fmt::Debug;
+use remtools::{join, qc};
 
-use crate::{compile, error, format_out, join, MCFunction, qc, SaveFiles};
+use crate::{compile, error, format_out, MCFunction, SaveFiles};
 use crate::compile::require;
 use crate::NodeType::{Command, Comment, FnCall, Scoreboard};
 use crate::server::{Blocker, death_error};

@@ -3,9 +3,28 @@
 use std::cmp::min;
 use std::ffi::OsStr;
 use std::fs::{read_dir, ReadDir, remove_dir_all};
+use remtools::{*, colors::*};
 use crate::{*, server::*};
 use crate::compile::require;
 use crate::minecraft::CachedType::{Recompile, Unchanged};
+
+// trait A {
+//     const GRY: u8 = 0;
+//     const RED: u8 = 1;
+//     const GRN: u8 = 2;
+//     const ORN: u8 = 3;
+//     const BLU: u8 = 4;
+//     const PNK: u8 = 5;
+//     const AQU: u8 = 6;
+//     const WHT: u8 = 7;
+// 
+//     fn foreground(&self, a: u8) -> String {
+//         
+//     }
+// }
+// impl A for String {}
+// impl A for str {}
+// impl A for char {}
 
 pub struct Datapack {
     meta: Meta,
@@ -70,7 +89,7 @@ impl Datapack {
                         irem = Some(i);
                         let cached_type = i_cache.compare_to(&self.pack_frag);
                         if cached_type != Unchanged {
-                            status_color("[!] pack.msk was changed, clearing cache".into(), str::GRY);
+                            status_color("[!] pack.msk was changed, clearing cache".into(), GRY);
                             I_CACHED_MSK.clear();
                             irem = None;
                         }
@@ -87,7 +106,7 @@ impl Datapack {
     fn import(&self, name: String) {
         unsafe {
             let import = fs::read_to_string(join!["./imports/", &*name, ".export.msk"]).unwrap_or_else(|e| {
-                death_error(join!("Could not read '",&*join!["./imports/", &*name, ".export.msk"].form_foreground(str::ORN),"' (", &*e.to_string(), ")"), errors::IMPORT_NOT_FOUND);
+                death_error(join!("Could not read '",&*join!["./imports/", &*name, ".export.msk"].foreground(ORN).end(),"' (", &*e.to_string(), ")"), errors::IMPORT_NOT_FOUND);
             });
             KNOWN_FUNCTIONS.append(&mut import.split(",").map(|s| s.to_string()).collect());
         }
@@ -111,9 +130,9 @@ impl Datapack {
         } else {
             warn("No namespaces found".to_string());
         }
-        status(join!["Loaded ", &*self.namespaces.len().to_string().form_foreground(str::GRN), " namespaces ", 
+        status(join!["Loaded ", &*self.namespaces.len().to_string().foreground(GRN).end(), " namespaces ", 
             &*join!["['", &*self.namespaces.iter().map(|n|n.id.clone()).collect::<Vec<String>>()
-                .join("\', \'"), "']"].form_foreground(str::GRY)])
+                .join("\', \'"), "']"].foreground(GRY).end()])
     }
 
     pub fn compile_namespaces(&mut self) {
@@ -140,7 +159,7 @@ impl Datapack {
     pub fn save(&mut self, gen: String, cache: bool) {
         remove_dir_all(join![&*self.src_loc, "/.cache"]).ok();
 
-        status(format!("Saving '{}'", &self.meta.view_name.form_foreground(str::PNK)));
+        status(format!("Saving '{}'", &self.meta.view_name.clone().foreground(PNK).end()));
 
         unsafe {
             GEN_LOC = gen;
@@ -156,7 +175,9 @@ impl Datapack {
                 let (Ok(s) | Err(s)) = self.meta.version.clone().map(|v| v.to_string());
                 s
             })
-            .replace("{DESC}", &self.meta.description));
+            .replace("{DESC}", &self.meta.description)).map_err(|e| {
+            soft_error(e.to_string());
+        }).ok();
 
         for nsi in 0..self.namespaces.len() {
             self.namespaces[nsi].save(cache);
@@ -174,7 +195,7 @@ impl Datapack {
                     !(unsafe {
                         !KNOWN_FUNCTIONS.contains(&qc!(flink.contains(":"), flink.to_string(), join![&*ns.id, ":", &**flink]))
                     } && {
-                        warn(format_out(&*join!["No such function '", &*flink.form_foreground(str::ORN), "' found for link '", &*link.path.form_foreground(str::BLU), "'"],
+                        warn(format_out(&*join!["No such function '", &*flink.clone().foreground(ORN).end(), "' found for link '", &*link.path.clone().foreground(BLU).end(), "'"],
                                         &*join![&*ns.id, "/event_links/", &*link.path], link.ln));
                         true
                     })
@@ -186,7 +207,9 @@ impl Datapack {
         for link in links.into_iter() {
             let file = MFile::new(self.data(&*join![&*link.path, "/tags/functions/", &*link.name, ".json"]));
             let write = link.functions.clone().into_iter().map(|s| join!["\"", &*s, "\""]).collect::<Vec<String>>();
-            file.save(TAG_TEMPLATE.replace("$VALUES$", &*write.join(",\n    ")));
+            file.save(TAG_TEMPLATE.replace("$VALUES$", &*write.join(",\n    "))).map_err(|e| {
+                soft_error(e.to_string());
+            }).ok();
         }
 
         unsafe {
@@ -208,23 +231,25 @@ impl Datapack {
             if clear {
                 let t = remove_dir_all(&world);
                 if t.is_err() {
-                    warn(join!["Could not clear pre-existing datapack (", &*t.unwrap_err().to_string(), ")"].form_foreground(str::RED));
+                    warn(join!["Could not clear pre-existing datapack (", &*t.unwrap_err().to_string(), ")"].foreground(RED).end());
                 }
             }
             status(format!(
                 "Copying {} {} {}",
-                join!["./", &*self.root("").replace("\\", "/")].form_underline(),
-                "to".form_foreground(str::GRY),
-                &*world.replace("\\", "/").form_underline().form_foreground(str::GRY)
+                join!["./", &*self.root("").replace("\\", "/")].modifier(UNDERLINE).end(),
+                "to".foreground(GRY).end(),
+                &*world.replace("\\", "/").modifier(UNDERLINE).foreground(GRY).end()
             ));
-            copy_dir_all(self.root(""), world).expect(&*"Failed to copy datapack".form_foreground(str::RED));
+            copy_dir_all(self.root(""), world).expect(&*"Failed to copy datapack".foreground(RED).end());
         }
     }
 
     pub fn export(&self) {
         unsafe {
             let file = MFile::new(self.get_dir(&*join!["/", &*self.meta.view_name, ".export.msk"]));
-            file.save(EXPORT_FUNCTIONS.join(","));
+            file.save(EXPORT_FUNCTIONS.join(",")).map_err(|e| {
+                soft_error(e.to_string());
+            }).ok();
         }
     }
 }
@@ -272,7 +297,7 @@ impl Meta {
             "remgine" | "name" | "version" | "description" | "suppress_warnings" if !extended => {
                 warn(
                     format_out(
-                        &*["Cannot override property \'", &*property.form_foreground(str::BLU), "\' in this context (value = \'", &*val.form_foreground(str::GRY), "\')"].join(""),
+                        &*["Cannot override property \'", &*property.foreground(BLU).end(), "\' in this context (value = \'", &*val.foreground(GRY).end(), "\')"].join(""),
                         &*warns.0,
                         warns.1,
                     ),
@@ -286,7 +311,7 @@ impl Meta {
             _ => {
                 warn(
                     format_out(
-                        &*["Unknown property: \'", &*property.form_foreground(str::BLU), "\' (value = \'", &*val.form_foreground(str::GRY), "\')"].join(""),
+                        &*["Unknown property: \'", &*property.foreground(BLU).end(), "\' (value = \'", &*val.foreground(GRY).end(), "\')"].join(""),
                         &*warns.0,
                         warns.1,
                     ),
@@ -295,7 +320,7 @@ impl Meta {
             }
         }
         if suc && self.vb >= 1 {
-            debug(format!("Set property \'{}\' to \'{}\'", property.form_foreground(str::BLU), val.form_foreground(str::AQU)));
+            debug(format!("Set property \'{}\' to \'{}\'", property.foreground(BLU).end(), val.foreground(AQU).end()));
         }
     }
 }
@@ -335,7 +360,7 @@ impl Namespace {
         if let Ok(fn_f) = self.read_src_ns("/functions") {
             files[0] = get_msk_files_split(fn_f, 0);
         } else if self.id.ne(&"minecraft".to_string()) {
-            warn(join!["No '", &*"functions".form_foreground(str::BLU), "' folder found for '", &*self.id.form_foreground(str::PNK), "'"]);
+            warn(join!["No '", &*"functions".foreground(BLU).end(), "' folder found for '", &*self.id.clone().foreground(PNK).end(), "'"]);
         }
 
         if let Ok(el_f) = self.read_src_ns("/event_links") {
@@ -367,7 +392,7 @@ impl Namespace {
             unsafe {
                 let value = join![&*self.id, ":", &*function.get_path().to_string()];
                 if KNOWN_FUNCTIONS.contains(&value) {
-                    error(format_out(&*join!["A function with the name '", &*function.get_path().form_foreground(str::ORN), "' already exists"],
+                    error(format_out(&*join!["A function with the name '", &*function.get_path().foreground(ORN).end(), "' already exists"],
                                      &*function.get_file_loc(), function.ln));
                 } else {
                     KNOWN_FUNCTIONS.push(value);
@@ -390,7 +415,7 @@ impl Namespace {
     }
 
     fn process_link_file(&mut self, file: &mut String, lines: &mut Vec<String>) {
-        qc!(self.meta.vb > 0, status(join!["Processing link file '", &*file.form_foreground(str::BLU), "'"]), ());
+        qc!(self.meta.vb > 0, status(join!["Processing link file '", &*file.clone().foreground(BLU).end(), "'"]), ());
         let mut lks = Vec::new();
         for (ln, line) in lines.into_iter().enumerate() {
             if (*line).eq("") { continue; }
@@ -418,12 +443,12 @@ impl Namespace {
     }
 
     fn process_item_file(&mut self, file: &mut String, lines: &mut Vec<String>, o_cache: &mut MskCache) {
-        qc!(self.meta.vb > 0, status(join!["Processing item file '", &*file.form_foreground(str::BLU), "'"]), ());
+        qc!(self.meta.vb > 0, status(join!["Processing item file '", &*file.clone().foreground(BLU).end(), "'"]), ());
         let item = Item::new(file, lines, self, o_cache);
         unsafe {
             let value = join![&*self.id, ":", &*item.function.get_path().to_string()];
             if KNOWN_FUNCTIONS.contains(&value) {
-                error(format_out(&*join!["A function with the name '", &*item.function.get_path().form_foreground(str::ORN), "' already exists"],
+                error(format_out(&*join!["A function with the name '", &*item.function.get_path().foreground(ORN).end(), "' already exists"],
                                  &*item.function.get_file_loc(), item.function.ln));
             } else {
                 KNOWN_FUNCTIONS.push(value);
@@ -463,7 +488,9 @@ impl Namespace {
         }
         for save in files {
             let file = MFile::new(join![unsafe {&*DATAROOT}, &*save.0, ".mcfunction"]);
-            file.save(save.1.join("\n"));
+            file.save(save.1.join("\n")).map_err(|e| {
+                soft_error(e.to_string());
+            }).ok();
         }
 
         let mut files: SaveFiles = vec![];
@@ -485,7 +512,9 @@ impl Namespace {
         }
         for save in files {
             let file = MFile::new(join![unsafe {&*DATAROOT}, &*save.0]);
-            file.save(save.1.join("\n"));
+            file.save(save.1.join("\n")).map_err(|e| {
+                soft_error(e.to_string());
+            }).ok();
         }
     }
 }
@@ -518,7 +547,7 @@ type FileData = (Vec<(String, String)>, (bool, Option<String>), bool);
 impl MCFunction {
     fn process_function_file(ns: &mut Namespace, file: &mut String, lines: &mut Vec<String>, o_cache: &mut MskCache) {
         let meta = ns.meta.clone();
-        qc!(ns.meta.vb > 0, status(join!["Processing function file '", &*file.form_foreground(str::BLU), "'"]), ());
+        qc!(ns.meta.vb > 0, status(join!["Processing function file '", &*file.clone().foreground(BLU).end(), "'"]), ());
         let mut fns = vec![];
         let mut ln = 1usize;
         let mut data: FileData = (vec![], (false, None), true);
@@ -594,7 +623,7 @@ impl MCFunction {
                 let key_2 = keys.get(1).unwrap_or(&fail);
                 if !(MCFunction::is_valid_fn(key_2) && !key_2.contains(":")) {
                     error(format_out(
-                        &*join!["Invalid function name \'", &*key_2.form_foreground(str::BLU), "\'"],
+                        &*join!["Invalid function name \'", &*key_2.clone().foreground(BLU).end(), "\'"],
                         &*ns.extend_path(&*file),
                         ln,
                     ));
@@ -639,7 +668,7 @@ impl MCFunction {
         match char_1 {
             '/' | '◙' | ' ' | '@' => {}
             c @ _ => error(format_out(
-                &*join!["Unexpected token '", &*c.form_foreground(str::ORN), "'"],
+                &*join!["Unexpected token '", &foreground(ORN).end(), &*c.to_string(), END, "'"],
                 &*ns.extend_path(&*file), ln)),
         }
         rem
@@ -667,7 +696,7 @@ impl MCFunction {
             if mcf.meta.vb >= 1 {
                 debug(format!(
                     "Found function \'{}\' {}",
-                    mcf.call_name.form_foreground(str::BLU),
+                    mcf.call_name.clone().foreground(BLU).end(),
                     ns.extend_path(&*mcf.file_path)
                 ).replace("/", "\\"));
             }
@@ -821,7 +850,7 @@ impl MCFunction {
                 }
                 _ => {
                     error(format_out(
-                        &*join!("Failed to parse score function, unknown operation '", &*keys[1].form_foreground(str::BLU), "'"),
+                        &*join!("Failed to parse score function, unknown operation '", &*keys[1].clone().foreground(BLU).end(), "'"),
                         &*mcf.get_file_loc(), ln));
                 }
             }
@@ -837,7 +866,7 @@ impl MCFunction {
                 }
                 _ => {
                     error(format_out(
-                        &*join!("Failed to parse score function, unknown operation '", &*keys[1].form_foreground(str::BLU), "'"),
+                        &*join!("Failed to parse score function, unknown operation '", &*keys[1].clone().foreground(BLU).end(), "'"),
                         &*mcf.get_file_loc(), ln));
                 }
             }
@@ -859,7 +888,7 @@ impl MCFunction {
                 }
                 _ => {
                     error(format_out(
-                        &*join!("Failed to parse score function, unknown operation '", &*keys[1].form_foreground(str::BLU), "'"),
+                        &*join!("Failed to parse score function, unknown operation '", &*keys[1].clone().foreground(BLU).end(), "'"),
                         &*mcf.get_file_loc(), ln));
                 }
             }
