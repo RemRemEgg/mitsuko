@@ -18,6 +18,8 @@ pub static COMMANDS: [&str; 66] = ["return", "advancement", "attribute", "bossba
     "seed", "setblock", "setworldspawn", "spawnpoint", "spectate", "spreadplayers", "stopsound", "summon", "tag", "team", "teammsg", "teleport",
     "tell", "tellraw", "time", "title", "tm", "tp", "trigger", "weather", "worldborder", "xp", "jfr", "place", "fillbiome", "ride", "damage", "random"];
 
+pub static DEFAULT_REPLACEMENTS: [&str; 6] = ["NAME", "INT_MAX", "INT_MIN", "PATH", "NEAR1", "LN"];
+
 static mut WARNINGS: Vec<String> = vec![];
 pub static mut O_GEN_FRAGMENTS: Vec<CachedFrag> = vec![];
 pub static mut I_CACHED_MSK: CacheFiles = vec![];
@@ -402,9 +404,22 @@ impl Blocker {
         }
     }
 
+    pub fn fix_index(line: &String, index: usize) -> usize {
+        let bytes = line.as_bytes();
+        if !bytes.is_ascii() {
+            let mut fix = 0;
+            let chars = line.chars().collect::<Vec<char>>();
+            for i in 0..index {
+                fix += !chars[i].is_ascii() as usize;
+            }
+            return fix;
+        }
+        0
+    }
+
     pub fn find_size(&mut self, line: &String, offset: usize) -> Result<usize, String> {
         fn char_error(c: char, l: usize) -> String {
-            format!("Unexpected \'{}{}{}\' ({})", ORN, c, END, l)
+            format!("Unexpected \'{}{}{}\' ({})", foreground(ORN), c, END, l)
         }
         if line.starts_with("//") || line.starts_with("cmd") || line.starts_with("@NOLEX cmd") {
             return Ok(Blocker::NOT_FOUND);

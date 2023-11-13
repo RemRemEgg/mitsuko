@@ -127,6 +127,7 @@ Mitsuko comes with built-in retrieves:
 | *{NEAR1}   | limit=1,sort=nearest |
 | *{SB}      |          §           |
 | *{LN}      |   <<x>line number>   |
+These names cannot be overriden by `set` or `@set`.
 
 ## Built-in Conditionals
 
@@ -145,11 +146,15 @@ JSON objects can be quickly created using `*JSON{<type> <format...>:[events]:<da
 `<type>` can be one of four items:
 
 * "text" : `<data>` is a string literal to be displayed (default)
-* "score" : `<data>` is a short score. See (Short Scores)[#TODO]
+* "score" : `<data>` is a short score
 * "nbt" : `<data>` is either `block <x y z> : path`, `entity <selector> : path`, or `storage <name> : path`
 * "custom" : Only the format will be applied, `<data>` is appended to the format
+* "parse" : Parses a string with short scores
 
-`<format...>` is a series of arguments: [italic, bold, strike, underlined, obfuscated]. Putting one of these will enable
+*Note on "parse": The scores that are injected must be surrounded by spaces, and the spaces directly before and after will be removed.
+ie, "You got &nbsp;@s:&score %" will parse to "You got 90%" if the score is 90. Notice the 2 spaces before and the 1 space after.*
+
+`<format...>` is a series of arguments: [italic, bold, strike, underlined, obfuscated, no_braces]. Putting one of these will enable
 it, placing an `!` in front will disable it. Anything else will be interpreted as color.
 
 `<data>` is any data to be used by the JSON, dependent on the type.
@@ -167,12 +172,22 @@ Examples:
 *JSON{score strike !bold !italic :: @s:&score}
 *JSON{nbt bold #58af50 :: block 10 50 12 : Items}
 *JSON{text : hover show_text *JSON{score :: @s:&score} : "Hover to see your score!"}
+*JSON{parse gold bold :: "You scored  @s:&score  points!"}
 ```
 
 Section breaks (§) can be used to apply formatting where Minecraft allows it. However, Quick JSON does not like dealing
 with them, and is prone to throwing errors when they are used. Section breaks can be inserted with the `*{SB}`
 retrieval. Nesting Quick JSON Objects is experimental, the Lexer can get pretty angry. If you really need to use quick
 JSON and the lexer won't let you, See [Danger Zone: @NOLEX](Danger%20Zone.md#nolex).
+
+`no_braces`: One format option is `no_braces`, which disables the parent braces around the object. ie, 
+
+```
+*JSON{text :: "Hi"}             ->   {"text":"Hi"}
+*JSON{text no_braces :: "Hi"}   ->   "text":"Hi"
+```
+
+
 
 ## '&' and 'r&' Replacements
 

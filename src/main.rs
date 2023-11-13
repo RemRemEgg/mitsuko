@@ -26,8 +26,12 @@ static MITSUKO: &str = include_str!("mitsuko.txt");
 //  macro support
 //  match statement
 //  add multi datapack bundling
+//  add macro support for @alias
+//  scalar for result
 
 //todo caching
+//  There is a very high chance im going to completely rework the caching system to make it faster and smaller
+//  redo all caching probs idk
 //  cache extras folder
 //  remove only parts of cache that need to be removed
 //  cache warnings, warnings stop caches

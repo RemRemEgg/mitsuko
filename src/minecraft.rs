@@ -616,8 +616,9 @@ impl MCFunction {
                 rem = res.0;
             }
             "@set" if require::min_args_path(3, &keys, join![&*ns.id, "/functions/", &*file], ln) => {
-                data.0.push((keys[1].clone(), keys[2..].join(" ")));
+                require::not_default_replacement(&keys[1], join![&*ns.id, "/functions/", &*file], ln);
                 rem = 1;
+                data.0.push((keys[1].clone(), keys[2..].join(" ")));
             }
             "@meta" if require::min_args_path(3, &keys, join![&*ns.id, "/functions/", &*file], ln) => {
                 let prop = &*keys[1];

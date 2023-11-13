@@ -5,6 +5,7 @@ use std::fmt::Debug;
 use remtools::{join, qc};
 
 use crate::{compile, error, format_out, MCFunction, SaveFiles};
+use crate::ast::NodeType::Macro;
 use crate::compile::require;
 use crate::NodeType::{Command, Comment, FnCall, Scoreboard};
 use crate::server::{Blocker, death_error};
@@ -26,11 +27,12 @@ pub enum NodeType {
     Command,
     Scoreboard,
     Block(char),
-    FnCall(String),
+    FnCall(String, Option<String>),
+    Macro(Box<Node>),
 
     Comment,
-    
-    Alias(String, String)
+
+    Alias(String, String),
 }
 
 impl NodeType {
@@ -50,7 +52,7 @@ impl Node {
             child.print_tree(idlvl + 1);
         }
     }
-    
+
     pub fn _tree_size(&self, mut current: u64) -> u64 {
         for n in self.children.iter() {
             current += 1;
@@ -70,7 +72,7 @@ impl Node {
 
     pub fn get_save_files(&mut self, files: &mut SaveFiles, lines: &mut Vec<String>, mcf: &mut MCFunction) {
         use crate::NodeType::*;
-        match &self.node {
+        match &mut self.node {
             Root => {
                 // self.print_tree(0);
                 self.children.iter_mut().for_each(|c| {
@@ -78,12 +80,18 @@ impl Node {
                 });
                 self.add_to_files(files, mcf.get_path(), lines, mcf);
             }
+            Macro(node) => {
+                let fln = lines.len();
+                node.get_save_files(files, lines, mcf);
+                lines[fln].insert(0, '$');
+                self.add_to_files(files, mcf.get_path(), lines, mcf);
+            }
             Block(id) => {
                 let mut blines = vec![];
                 self.children.iter_mut().for_each(|c| {
                     c.get_save_files(files, &mut blines, mcf);
                 });
-                if id.eq(&'r') {
+                if (*id).eq(&'r') {
                     let amo = (blines.len() - 1) * blines.remove(0).parse::<usize>().unwrap_or(1);
                     compile::finish_lines(&mut blines, mcf);
                     blines = blines.into_iter().cycle().take(amo).collect::<Vec<_>>();
@@ -103,7 +111,7 @@ impl Node {
                     }
                 }
             }
-            
+
             Alias(exns, exna) => {
                 files.push((join!["@ALIAS", &*exns, "/functions/", &*exna], self.lines.drain(..).collect()));
             }
@@ -131,8 +139,15 @@ impl Node {
                 }
                 lines.append(&mut self.lines);
             }
-            Scoreboard | FnCall(_) => {
+            Scoreboard => {
                 lines.append(&mut self.lines);
+            }
+            FnCall(name, extras) => {
+                if extras.is_some() {
+                    lines.push(join![" ": "function", &**name, &extras.clone().unwrap()]);
+                } else {
+                    lines.push(join![" ": "function", &**name]);
+                }
             }
             Comment if mcf.meta.comments => {
                 lines.append(&mut self.lines.clone());
@@ -149,13 +164,17 @@ impl Node {
 
     pub fn generate(&mut self, mcf: &mut MCFunction) {
         use crate::NodeType::*;
-        match &self.node {
+        match &mut self.node {
             Block(_) | Root => {
                 self.generate_text(mcf);
             }
 
-            Scoreboard | Command | FnCall(_) => {
+            Scoreboard | Command | FnCall(_, _) => {
                 compile::node_text(self, mcf);
+            }
+
+            Macro(node) => {
+                node.generate(mcf);
             }
 
             None | Comment | Alias(_, _) => {}
@@ -176,12 +195,7 @@ impl Node {
             } else { l.clone() }).collect();
         let mut ln = 1;
         while self.lines.len() > 0 {
-            for _ in 0..mcf.meta.recursive_replace {
-                for i in mcf.vars.iter() {
-                    self.lines[0] = self.lines[0].replace(&*["*{", &*i.0, "}"].join(""), &*i.1);
-                }
-            }
-            self.lines[0] = compile::replacements(&self.lines[0], self, mcf, ln);
+            compile::replacements(self, mcf, ln);
 
             let (rem, nn) = Node::build_from_lines(&mut self.lines, mcf, self.ln + ln);
             for _ in 0..min(rem, self.lines.len()) {
@@ -258,6 +272,7 @@ impl Node {
                 }
             }
             "set" if require::min_args(3, &keys, mcf, ln) => {
+                require::not_default_replacement(&keys[1], mcf.get_file_loc(), ln);
                 node.node = NodeType::None;
                 mcf.vars.retain(|x| !x.0.eq(&*keys[1]));
                 mcf.vars
@@ -270,7 +285,7 @@ impl Node {
             "repeat" if require::exact_args(3, &keys, mcf, ln) => {
                 let (remx, mut nna) = Node::build_extract_block(lines, &mut node, mcf, 'r');
                 nna.lines.insert(0, join!["cmd ", &*keys[1].parse::<u32>().unwrap_or_else(|_| {
-                    error(format_out(&*join!["Failed to parse '", &*keys[1], "' to a number"],
+                    error(format_out(&*join!["Failed to parse '", &*keys[1], "' as a number"],
                                      &*mcf.get_file_loc(), ln));
                     1
                 }).to_string()]);
@@ -300,6 +315,14 @@ impl Node {
                 node.node = Command;
                 node.lines = vec![keys.join(" ")];
             }
+            "macro" => {
+                lines[0] = lines[0][6..].into();
+                let (remx, nn) = Node::build_from_lines(lines, mcf, node.ln);
+                if let Some(nnu) = nn {
+                    node.node = Macro(Box::new(nnu));
+                }
+                rem = remx;
+            }
             _ if MCFunction::is_score_path(&keys[0], mcf, ln) => {
                 node.node = Scoreboard;
                 node.lines = vec![lines[0].clone()];
@@ -328,9 +351,8 @@ impl Node {
                 node.lines = vec!["".into()];
             }
             f @ _ => {
-                if let Some(path) = compile::is_fn_call(f, mcf) {
-                    node.lines = vec![join!["function ", &*path]];
-                    node.node = FnCall(path);
+                if let Some((path, extras)) = compile::is_fn_call(f, mcf, &keys) {
+                    node.node = FnCall(path, extras);
                 } else {
                     node.node = Command;
                     node.lines = vec![lines[0].clone()];

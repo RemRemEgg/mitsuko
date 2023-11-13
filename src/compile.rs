@@ -78,20 +78,27 @@ pub fn node_text(node: &mut Node, mcf: &mut MCFunction) {
                     let keys = keys[1][1..keys[1].len() - 1].split(",").map(|s| s.trim().to_string()).collect::<Vec<_>>();
                     if require::min_args_named(2, "for loop", &keys, mcf, node.ln) {
                         let target = MCValue::new(&keys[0], mcf, node.ln);
-                        let mut stop = MCValue::new(&keys[1], mcf, node.ln);
-                        let mut start = MCValue::Number { value: 0 };
-                        if keys.len() == 3 {
-                            start = stop;
+                        let mut stop;
+                        let mut cc = 1;
+                        if keys[1].eq("_") && keys.len() == 3 {
+                            cc = 0;
                             stop = MCValue::new(&keys[2], mcf, node.ln);
+                        } else {
+                            stop = MCValue::new(&keys[1], mcf, node.ln);
+                            let mut start = MCValue::Number { value: 0 };
+                            if keys.len() == 3 {
+                                start = stop;
+                                stop = MCValue::new(&keys[2], mcf, node.ln);
+                            }
+                            node.lines.insert(0, target.set_equal_to(&start, mcf, node.ln));
                         }
-                        node.lines.insert(0, target.set_equal_to(&start, mcf, node.ln));
                         let call_cond = join!["execute ", &*target.get_less_than(&stop, mcf, node.ln), " run"];
                         let nna = &mut node.children[0];
                         let path = join![&*mcf.get_path(), ".f", &*nna.ln.to_string()];
                         let path = path.strip_prefix("/").unwrap_or(&*path);
                         nna.lines.push(join!["scoreboard players add ", &*target.get(), " 1"]);
                         nna.lines.push(join!(&*call_cond, " function ", &*mcf.ns_id, ":", &*path));
-                        node.lines[1] = call_cond;
+                        node.lines[cc] = call_cond;
                     }
                 }
                 f @ _ => {
@@ -112,7 +119,7 @@ pub fn node_text(node: &mut Node, mcf: &mut MCFunction) {
             let keys = keys.unwrap();
             node.lines = MCFunction::compile_score_command(&keys, mcf, node.ln);
         }
-        FnCall(path) => {
+        FnCall(path, _) => {
             unsafe {
                 if !KNOWN_FUNCTIONS.contains(path) {
                     warn(format_out(&*join!["Unknown function '", &*path.clone().foreground(ORN).end(), "'"], &*mcf.get_file_loc(), node.ln));
@@ -209,32 +216,48 @@ pub fn node_condition(node: &mut Node, mut cond: String, mcf: &mut MCFunction) -
     (cond, isif)
 }
 
-pub fn is_fn_call(call: &str, mcf: &mut MCFunction) -> Option<String> {
+pub fn is_fn_call(call: &str, mcf: &mut MCFunction, keys: &[String]) -> Option<(String, Option<String>)> {
     let mut call = call.clone();
     if call.len() < 2 { return None; };
     let local = call.starts_with("&");
-    let tag = call.starts_with("#");
+    let tag = call[local as usize..].starts_with("#");
     call = call[(local as usize + tag as usize)..].into();
     return if MCFunction::is_valid_fn(&*call) {
         call = call.trim_end_matches("()");
         let (ns, name) = call.split_once(":").unwrap_or((&*mcf.ns_id, call));
         let path = qc!(local, path_without_functions(mcf.file_path.clone()), "".into());
-        Some(join![qc!(tag, "#", ""), ns, ":", &*path, qc!(local && path.len() > 0, "/", ""), name])
+        let fncall = join![qc!(tag, "#", ""), ns, ":", &*path, qc!(local && path.len() > 0, "/", ""), name];
+        let extras = qc!(keys.len() > 1, Some(keys[1..].join(" ")), None);
+        Some((fncall, extras))
     } else {
+        if let Some((name, extras)) = call.split_once("(") {
+            return if MCFunction::is_valid_fn(&*join![name, "()"]) {
+                let (ns, name) = name.split_once(":").unwrap_or((&*mcf.ns_id, name));
+                let path = qc!(local, path_without_functions(mcf.file_path.clone()), "".into());
+                let fncall = join![qc!(tag, "#", ""), ns, ":", &*path, qc!(local && path.len() > 0, "/", ""), name];
+                Some((fncall, Some(join![&extras[..extras.len()-1]])))
+            } else {
+                None
+            };
+        }
         None
     };
 }
 
-pub fn replacements(text: &String, node: &Node, mcf: &mut MCFunction, ln: usize) -> String {
-    let mut text = text.replace("*{NS}", &*mcf.ns_id)
-        .replace("*{NAME}", &*mcf.meta.view_name)
-        .replace("*{INT_MAX}", "2147483647")
-        .replace("*{INT_MIN}", "-2147483648")
-        .replace("*{PATH}", &*mcf.get_file_loc())
-        .replace("*{NEAR1}", "limit=1,sort=nearest")
-        .replace("*{LN}", &*(node.ln + ln).to_string());
-    parse_json_all(&mut text, mcf, node.ln + ln);
-    text
+pub fn replacements(node: &mut Node, mcf: &mut MCFunction, ln: usize) {
+    for _ in 0..mcf.meta.recursive_replace {
+        for i in mcf.vars.iter() {
+            node.lines[0] = node.lines[0].replace(&*["*{", &*i.0, "}"].join(""), &*i.1);
+        }
+        node.lines[0] = node.lines[0].replace("*{NS}", &*mcf.ns_id)
+            .replace("*{NAME}", &*mcf.meta.view_name)
+            .replace("*{INT_MAX}", "2147483647")
+            .replace("*{INT_MIN}", "-2147483648")
+            .replace("*{PATH}", &*mcf.get_file_loc())
+            .replace("*{NEAR1}", "limit=1,sort=nearest")
+            .replace("*{LN}", &*(node.ln + ln).to_string());
+    }
+    parse_json_all(&mut node.lines[0], mcf, node.ln + ln);
 }
 
 fn parse_json_all(text: &mut String, mcf: &mut MCFunction, ln: usize) {
@@ -243,9 +266,11 @@ fn parse_json_all(text: &mut String, mcf: &mut MCFunction, ln: usize) {
     }
     let mut pos = text.match_indices("*JSON{").map(|s| s.0).collect::<Vec<_>>();
     pos.reverse();
-    for p in pos {
-        if let Ok(out) = Blocker::new().find_size(text, p + 5) {
-            let mut input = Blocker::new().split_in_same_level(":", &text[(p + 6)..out - 1].to_string())
+    for a in pos {
+        let fix = Blocker::fix_index(text, a);
+        if let Ok(mut out) = Blocker::new().find_size(text, a - fix + 5) {
+            out += fix;
+            let mut input = Blocker::new().split_in_same_level(":", &text[(a + 6)..out - 1].to_string())
                 .unwrap_or(vec!["text".into(), "".into(), "\"\"".into()]);
             input.insert(0, "*JSON".into());
             if !require::min_args(4, &input, mcf, ln) {
@@ -267,6 +292,8 @@ fn parse_json_all(text: &mut String, mcf: &mut MCFunction, ln: usize) {
                     "strike" | "strikethrough" => data.strike = Some(set),
                     "underline" | "underlined" => data.underline = Some(set),
                     "obfuscated" | "mystify" => data.obfuscated = Some(set),
+                    "no_braces" => data.no_braces = set,
+                    "" => {},
                     _ if idx != 0 && data.color.is_none() && !opt.eq("") => data.color = Some(opt.to_string()),
                     _ => {}
                 }
@@ -294,14 +321,40 @@ fn parse_json_all(text: &mut String, mcf: &mut MCFunction, ln: usize) {
                 "score" => { Score(data, MCFunction::compile_score_path(&input[2..].join(":").trim().into(), mcf, ln)) }
                 "custom" => { Custom(data, input[2..].join(":").to_string()) }
                 "nbt" => { NBT(data, input[2..].join(":").trim().to_string()) }
+                "parse" => {
+                    let mut elements = vec![];
+                    let mut strings: Option<String> = None;
+                    let mut pre = input[2..].join(":").trim().to_string();
+                    pre = pre[1..pre.len() - 1].to_string();
+                    let inputs = pre.split(" ");
+                    for input in inputs {
+                        if MCFunction::is_score_path(&input.to_string(), mcf, ln) {
+                            if let Some(cs) = strings.take() {
+                                elements.push(Text(data.clone(), join![r#"""#, &*cs, r#"""#]));
+                            }
+                            elements.push(Score(data.clone(), MCFunction::compile_score_path(&input.to_string(), mcf, ln)))
+                        } else {
+                            match strings.as_mut() {
+                                None => strings = Some("".to_string()),
+                                Some(string) => string.push(' ')
+                            }
+                            strings.as_mut().unwrap().push_str(input);
+                        }
+                    }
+                    if strings.is_some() {
+                        elements.push(Text(data.clone(), join![r#"""#, &*strings.unwrap(), r#"""#]))
+                    }
+                    Parse(data, elements)
+                }
                 _ => { Text(data, input[2..].join(":").trim().to_string()) }
             };
             let json = json.to_string();
-            text.replace_range(p..out, &*json);
+            text.replace_range(a..out, &*json);
         }
     }
 }
 
+#[derive(Clone)]
 struct JSONData {
     italic: Option<bool>,
     bold: Option<bool>,
@@ -309,6 +362,8 @@ struct JSONData {
     underline: Option<bool>,
     obfuscated: Option<bool>,
     color: Option<String>,
+    
+    no_braces: bool,
 
     event_hover: Option<(String, String)>,
     event_click: Option<(String, String)>,
@@ -323,6 +378,7 @@ impl JSONData {
             underline: None,
             obfuscated: None,
             color: None,
+            no_braces: false,
             event_hover: None,
             event_click: None,
         }
@@ -346,24 +402,29 @@ enum JSON {
     Score(JSONData, [String; 2]),
     Custom(JSONData, String),
     NBT(JSONData, String),
+    Parse(JSONData, Vec<JSON>),
 }
 
 impl JSON {
     fn to_string(&self) -> String {
-        match self {
+        let no_braces;
+        let mut string = match self {
             Text(data, text) => {
                 let mut json = join![r#"{"text":"#, &*text];
                 data.append_data(&mut json).push_str("}");
+                no_braces = data.no_braces;
                 json
             }
             Score(data, path) => {
                 let mut json = join![r#"{"score":{"name":""#, &*path[0], r#"","objective":""#, &*path[1], "\"}"];
                 data.append_data(&mut json).push_str("}");
+                no_braces = data.no_braces;
                 json
             }
             Custom(data, text) => {
                 let mut json = join!["{", &*text];
                 data.append_data(&mut json).push_str("}");
+                no_braces = data.no_braces;
                 json
             }
             NBT(data, path) => {
@@ -371,9 +432,18 @@ impl JSON {
                 let (target, path) = path.split_once(" : ").unwrap_or(("_", "_"));
                 let mut json = join![r#"{"nbt":""#, path, r#"",""#, typ, r#"":""#, target, "\""];
                 data.append_data(&mut json).push_str("}");
+                no_braces = data.no_braces;
                 json
             }
+            Parse(data, elements) => {
+                no_braces = data.no_braces;
+                join!["[", &*elements.iter().map(|elem| {elem.to_string()}).collect::<Vec<String>>().join(","), "]"]
+            }
+        };
+        if no_braces {
+            string = string[1..string.len()-1].to_string();
         }
+        string
     }
 }
 
@@ -433,6 +503,7 @@ pub mod require {
     use std::fmt::Display;
     use remtools::{*, colors::*};
     use crate::{error, format_out, MCFunction};
+    use crate::server::DEFAULT_REPLACEMENTS;
 
     pub fn min_args<T: Display>(count: usize, keys: &Vec<T>, mcf: &mut MCFunction, ln: usize) -> bool {
         if keys.len() < count {
@@ -474,6 +545,13 @@ pub mod require {
             error(format_out(&*format!("Expected keyword '{}' got {}", word, test), &*mcf.get_file_loc(), ln))
         }
         test.eq(word)
+    }
+    
+    pub fn not_default_replacement(rep: &String, path: String, ln: usize) -> bool {
+        return !(DEFAULT_REPLACEMENTS.contains(&&**rep) && {
+            error(format_out(&*format!("Cannot override default replacement '{}'", rep), &*path, ln));
+            true
+        })
     }
 }
 

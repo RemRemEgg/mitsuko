@@ -192,7 +192,7 @@ MCFunction.
 
 For loops follow one of two formats; `for (<score>, <stop>) {` or `for (<score>, <start>, <stop>) {`. If no `<start>` is
 specified, it starts at 0; For loops go until they reach the end value (value < stop). Both `<start>` and `<stop>` can
-be scoreboards or values.
+be scoreboards or values. The `<start>` value can be omitted with an `_`, making the current value the start value
 
 ```
 fn test() {
@@ -201,6 +201,9 @@ fn test() {
     }
     for (iteration:&data, 18, max:&data) {
         tellraw @s *JSON{score :: iteration:&data}
+    }
+    for ($test, _, 18) {
+        setblock ~ ~ ~ gold_block
     }
 }
 ```
