@@ -103,10 +103,11 @@ pub fn node_text(node: &mut Node, mcf: &mut MCFunction) {
                 }
                 f @ _ => {
                     if !f.is_empty() && !COMMANDS.contains(&f) {
-                        warn(format_out(&*join!["Unknown command '", f, "'"], &*mcf.get_file_loc(), node.ln))
-                    } else {
-                        node.lines[0] = keys.join(" ");
+                        if !(f.starts_with("$(") && f.ends_with(")")) {
+                            warn(format_out(&*join!["Unknown command '", f, "'"], &*mcf.get_file_loc(), node.ln))
+                        }
                     }
+                    node.lines[0] = keys.join(" ");
                 }
             }
         }
