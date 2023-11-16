@@ -215,22 +215,22 @@ impl Node {
             node.lines = vec![join!["#", &lines[0][2..]]];
             return (1, Some(node));
         }
-        let keys = Blocker::new().split_in_same_level(" ", &lines[0]);
-        if let Err(e) = keys {
-            error(format_out(&*e, &*mcf.get_file_loc(), ln));
-            return (0 - 1 as usize, None);
-        }
-        let mut keys = keys.unwrap();
+
+        let mut need_split = false;
         let mut node = Node::new(NodeType::None, ln);
         let mut rem = 1;
-        match &*keys[0] {
+        let binding = lines[0].clone();
+        let keys = binding.split(" ").collect::<Vec<_>>();
+        if keys.len() == 0 {return (0, None); }
+        let post = &*keys.get(1..).unwrap_or(&[""]).join(" ");
+        match keys[0] {
             "@DEBUG" => {
-                println!("\x1b[96m@DEBUG [{}]: {} for {}\x1b[0m", keys[1..].join(" "), ln, lines[0]);
+                println!("\x1b[96m@DEBUG [{}]: {} for {}\x1b[0m", post, ln, lines[0]);
             }
             "@TREE" => {
                 lines.remove(0);
                 let (remx, nna) = Node::build_from_lines(lines, mcf, ln);
-                println!("\x1b[94m@TREE {}:{} [{}]:\x1b[0m", &*mcf.get_file_loc(), ln, keys[1..].join(" "));
+                println!("\x1b[94m@TREE {}:{} [{}]:\x1b[0m", &*mcf.get_file_loc(), ln, post);
                 if let Some(node) = nna.clone() {
                     node.print_tree(0);
                 }
@@ -238,17 +238,17 @@ impl Node {
             }
             "@DBG_ERROR" => {
                 error(format_out(
-                    &*format!("\x1b[94m@DBG_ERROR [{}]\x1b[0m", keys[1..].join(" ")),
+                    &*format!("\x1b[94m@DBG_ERROR [{}]\x1b[0m", post),
                     &*mcf.get_file_loc(),
                     ln,
                 ));
             }
             "ast" => {
-                lines[0] = ["execute ", &*lines[0]].join("");
+                lines[0] = join!["execute ", &*lines[0]];
                 return Node::build_from_lines(lines, mcf, ln);
             }
             "exe" => {
-                lines[0] = ["execute ", &lines[0][4..]].join("");
+                lines[0] = join!["execute ", post];
                 return Node::build_from_lines(lines, mcf, ln);
             }
             "execute" => {
@@ -272,7 +272,7 @@ impl Node {
                 }
             }
             "set" if require::min_args(3, &keys, mcf, ln) => {
-                require::not_default_replacement(&keys[1], mcf.get_file_loc(), ln);
+                require::not_default_replacement(keys[1], mcf.get_file_loc(), ln);
                 node.node = NodeType::None;
                 mcf.vars.retain(|x| !x.0.eq(&*keys[1]));
                 mcf.vars
@@ -291,6 +291,34 @@ impl Node {
                 }).to_string()]);
                 return (remx, Some(nna));
             }
+            "macro" => {
+                lines[0] = post.to_string();
+                let (remx, nn) = Node::build_from_lines(lines, mcf, node.ln);
+                if let Some(nnu) = nn {
+                    node.node = Macro(Box::new(nnu));
+                }
+                rem = remx;
+            }
+            _ if keys[0].starts_with("//") => {
+                node.node = Comment;
+                node.lines = vec![join!["#", &lines[0][2..]]];
+            }
+            _ if keys[0].is_empty() => {
+                node.node = Comment;
+                node.lines = vec!["".into()];
+            }
+            _ => need_split = true,
+        }
+
+        if !need_split { return (rem, if !node.node.is_none() { Some(node) } else { None }); }
+
+        let keys = Blocker::new().split_in_same_level(" ", &lines[0]);
+        if let Err(e) = keys {
+            error(format_out(&*e, &*mcf.get_file_loc(), ln));
+            return (0 - 1usize, None);
+        }
+        let mut keys = keys.unwrap();
+        match &*keys[0] {
             "if" if require::min_args(2, &keys, mcf, ln) => {
                 qc!(keys.len() > 2, keys.insert(2, "run".into()), ());
                 lines[0] = join!["execute ", &*keys.join(" ")];
@@ -315,14 +343,6 @@ impl Node {
                 node.node = Command;
                 node.lines = vec![keys.join(" ")];
             }
-            "macro" => {
-                lines[0] = lines[0][6..].into();
-                let (remx, nn) = Node::build_from_lines(lines, mcf, node.ln);
-                if let Some(nnu) = nn {
-                    node.node = Macro(Box::new(nnu));
-                }
-                rem = remx;
-            }
             _ if MCFunction::is_score_path(&keys[0], mcf, ln) => {
                 node.node = Scoreboard;
                 node.lines = vec![lines[0].clone()];
@@ -341,14 +361,6 @@ impl Node {
                         node.children.clear();
                     }
                 }
-            }
-            _ if keys[0].starts_with("//") => {
-                node.node = Comment;
-                node.lines = vec![join!["#", &lines[0][2..]]];
-            }
-            _ if keys[0].is_empty() => {
-                node.node = Comment;
-                node.lines = vec!["".into()];
             }
             f @ _ => {
                 if let Some((path, extras)) = compile::is_fn_call(f, mcf, &keys) {

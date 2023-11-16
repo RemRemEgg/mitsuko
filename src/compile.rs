@@ -261,7 +261,7 @@ pub fn replacements(node: &mut Node, mcf: &mut MCFunction, ln: usize) {
 }
 
 fn parse_json_all(text: &mut String, mcf: &mut MCFunction, ln: usize) {
-    if text.starts_with("//") {
+    if text.starts_with("//") || text.starts_with("set ") {
         return;
     }
     let mut pos = text.match_indices("*JSON{").map(|s| s.0).collect::<Vec<_>>();
@@ -293,7 +293,7 @@ fn parse_json_all(text: &mut String, mcf: &mut MCFunction, ln: usize) {
                     "underline" | "underlined" => data.underline = Some(set),
                     "obfuscated" | "mystify" => data.obfuscated = Some(set),
                     "no_braces" => data.no_braces = set,
-                    "" => {},
+                    "" => {}
                     _ if idx != 0 && data.color.is_none() && !opt.eq("") => data.color = Some(opt.to_string()),
                     _ => {}
                 }
@@ -322,6 +322,8 @@ fn parse_json_all(text: &mut String, mcf: &mut MCFunction, ln: usize) {
                 "custom" => { Custom(data, input[2..].join(":").to_string()) }
                 "nbt" => { NBT(data, input[2..].join(":").trim().to_string()) }
                 "parse" => {
+                    let actual_data = data.clone();
+                    data.no_braces = false;
                     let mut elements = vec![];
                     let mut strings: Option<String> = None;
                     let mut pre = input[2..].join(":").trim().to_string();
@@ -344,7 +346,7 @@ fn parse_json_all(text: &mut String, mcf: &mut MCFunction, ln: usize) {
                     if strings.is_some() {
                         elements.push(Text(data.clone(), join![r#"""#, &*strings.unwrap(), r#"""#]))
                     }
-                    Parse(data, elements)
+                    Parse(actual_data, elements)
                 }
                 _ => { Text(data, input[2..].join(":").trim().to_string()) }
             };
@@ -362,7 +364,7 @@ struct JSONData {
     underline: Option<bool>,
     obfuscated: Option<bool>,
     color: Option<String>,
-    
+
     no_braces: bool,
 
     event_hover: Option<(String, String)>,
@@ -441,7 +443,7 @@ impl JSON {
             }
         };
         if no_braces {
-            string = string[1..string.len()-1].to_string();
+            string = string[1..string.len() - 1].to_string();
         }
         string
     }
@@ -546,12 +548,12 @@ pub mod require {
         }
         test.eq(word)
     }
-    
-    pub fn not_default_replacement(rep: &String, path: String, ln: usize) -> bool {
-        return !(DEFAULT_REPLACEMENTS.contains(&&**rep) && {
+
+    pub fn not_default_replacement(rep: &str, path: String, ln: usize) -> bool {
+        return !(DEFAULT_REPLACEMENTS.contains(&rep) && {
             error(format_out(&*format!("Cannot override default replacement '{}'", rep), &*path, ln));
             true
-        })
+        });
     }
 }
 

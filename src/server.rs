@@ -391,6 +391,10 @@ impl Blocker {
                 return Ok(Blocker::NOT_FOUND);
             }
             let line = lines[c].trim();
+            if line.starts_with("set ") || line.starts_with("//") { 
+                c += 1;
+                continue;
+            }
             if line.ends_with("{") {
                 self.stack.push('}');
             } else if line.starts_with("}") {
@@ -421,7 +425,7 @@ impl Blocker {
         fn char_error(c: char, l: usize) -> String {
             format!("Unexpected \'{}{}{}\' ({})", foreground(ORN), c, END, l)
         }
-        if line.starts_with("//") || line.starts_with("cmd") || line.starts_with("@NOLEX cmd") {
+        if line.starts_with("//") || line.starts_with("@NOLEX") {
             return Ok(Blocker::NOT_FOUND);
         }
         let mut cs = line.chars();
