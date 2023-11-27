@@ -7,6 +7,7 @@
 * [Execute § ast](#ast)
 * [Execute § if](#if)
 * [Calling Functions](#calling-functions)
+* [Using Macros](#using-macros)
 * [Scoreboards & Short Scores](#scoreboards--short-scores)
 * [Scoreboards & Short Scores § Score Operations](#score-operations)
 * [Set and Retrievals](#set--retrievals)
@@ -46,6 +47,16 @@ contained commands; `if !(con1 && con2 && !con3)` => `execute unless con1 unless
 that chaining an `if` into an `execute` will be `if (cond) execute`. However, this can be [optimized](Danger%20Zone.md#optimizations) away by the
 compiler.
 
+## Using Macros
+
+Since Mitsuko uses `$` to indicate temporary scores, the `macro` command has been added.
+```
+fn macro_function() {
+    macro setblock ~ ~ ~ $(block)
+    macro $(command)
+}
+```
+
 ## Calling Functions
 
 Statements without spaces that end with `()` will be interpreted as a function call. `example:subfolder/main()`
@@ -56,6 +67,40 @@ function call does not start with a namespace, the current one will be added; `i
 The current directory can be substituted with an `&`. If we are in the file `functions/outer/inner.msk` and we
 call `&local()`, the result will be `function <namespace>:outer/inner/local()`. Calling just `local()` from here would
 attempt to call the function `<namespace>:local`. See ['&' and 'r&' Replacements](#-and-r-replacements)
+
+```
+fn calling_function() {
+    global_function()
+    &local_function()
+    #gloabl_tag()
+    &#local_tag()
+    external:function()
+    #external:tag()
+}
+```
+
+### Calling Macro Functions
+
+Macro functions can be called by two methods.
+```
+fn macro_function() {
+    // -- code --
+}
+
+fn call_function() {
+    // method 1
+    &macro_function() with block ~ ~ ~
+    &macro_function() with entity @s
+    &macro_function() {"data":"123456789"}
+    &macro_function() {"data":"123456789", "other_data":"987654321"}
+    
+    // method 2
+    &macro_function({"data":"123456789"})
+    &macro_function({"data":"123456789", "other_data":"987654321"})
+}
+```
+
+*Due to how Mitsuko is set up, `&macro_function(with entity @p)` is technically valid and will compile.*
 
 ## Scoreboards & Short Scores
 
@@ -151,7 +196,7 @@ JSON objects can be quickly created using `*JSON{<type> <format...>:[events]:<da
 * "custom" : Only the format will be applied, `<data>` is appended to the format
 * "parse" : Parses a string with short scores
 
-*Note on "parse": The scores that are injected must be surrounded by spaces, and the spaces directly before and after will be removed.
+*Note on "parse": The scores that are added must be surrounded by spaces, and the spaces directly before and after will be removed.
 ie, "You got &nbsp;@s:&score %" will parse to "You got 90%" if the score is 90. Notice the 2 spaces before and the 1 space after.*
 
 `<format...>` is a series of arguments: [italic, bold, strike, underlined, obfuscated, no_braces]. Putting one of these will enable
@@ -175,8 +220,7 @@ Examples:
 *JSON{parse gold bold :: "You scored  @s:&score  points!"}
 ```
 
-Section breaks (§) can be used to apply formatting where Minecraft allows it. However, Quick JSON does not like dealing
-with them, and is prone to throwing errors when they are used. Section breaks can be inserted with the `*{SB}`
+Section breaks (§) can be used to apply formatting where Minecraft allows it. Section breaks can be inserted with the `*{SB}`
 retrieval. Nesting Quick JSON Objects is experimental, the Lexer can get pretty angry. If you really need to use quick
 JSON and the lexer won't let you, See [Danger Zone: @NOLEX](Danger%20Zone.md#nolex).
 
@@ -184,7 +228,10 @@ JSON and the lexer won't let you, See [Danger Zone: @NOLEX](Danger%20Zone.md#nol
 
 ```
 *JSON{text :: "Hi"}             ->   {"text":"Hi"}
-*JSON{text no_braces :: "Hi"}   ->   "text":"Hi"
+*JSON{text no_braces :: "Hi"}   ->    "text":"Hi"
+
+*JSON{parse :: "X:  $temp %"}             ->  [{"text":"X is "},{"score":-- snip --},{"text":"%"}]
+*JSON{parse no_braces :: "X:  $temp %"}   ->   {"text":"X is "},{"score":-- snip --},{"text":"%"}
 ```
 
 

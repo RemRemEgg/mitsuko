@@ -42,7 +42,7 @@ pub fn print_warnings(pack: &Datapack) {
         if WARNINGS.len() > 0 && !SUPPRESS_WARNINGS {
             println!();
             status(format!(
-                "'{}' Generated {} Warnings",
+                "'{}' Generated {} Warning(s)",
                 pack.get_view_name(),
                 WARNINGS.len()
             ).foreground(ORN).end());

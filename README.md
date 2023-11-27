@@ -1,5 +1,5 @@
 <h1>Mitsuko</h1>
-<h6>Version 0.1.0 - For 1.19 - By RemRemEgg</h6>
+<h6>Version 0.2.0 - For 1.20.2 - By RemRemEgg</h6>
 
 ---
 

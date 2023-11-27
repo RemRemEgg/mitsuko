@@ -16,9 +16,9 @@ use ast::*;
 use minecraft::*;
 
 static CURRENT_PACK_VERSION: u8 = 18;
-/**projects/NDL/src*/
+/** /path/src*/
 static mut SRC: String = String::new();
-/**projects/NDL*/
+/** /path*/
 static mut PROJECT_ROOT: String = String::new();
 static MITSUKO: &str = include_str!("mitsuko.txt");
 
