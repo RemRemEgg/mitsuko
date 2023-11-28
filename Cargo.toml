@@ -1,7 +1,7 @@
 [package]
 name = "mitsuko"
 version = "0.2.2"
-edition = "2023"
+edition = "2021"
 
 [dependencies]
 remtools = "1.*"
