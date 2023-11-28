@@ -8,3 +8,5 @@ remtools = "1.*"
 
 [profile.dev]
 overflow-checks = false
+codegen-units = 4
+opt-level = 0
