@@ -231,60 +231,64 @@ pub fn get_cli_args() -> CliArgs {
     let mut args = env::args().collect::<Vec<String>>().into_iter();
     args.next();
 
-    let mode = args.next().unwrap_or("help".into());
-    match &*mode {
-        "help" => {
-            print_help();
-            exit(0);
-        }
-        "build" => {
-            let mut cliargs = CliArgs::default();
-            cliargs.input = args.next().unwrap_or_else(|| {
-                death_error(join!("No pack specified"), errors::BAD_CLI_OPTIONS)
-            }).to_string().replace("\\", "/");
-            while cliargs.input.ends_with("/") {
-                cliargs.input.pop();
+    if let Some(mode) = args.next() {
+        match &*mode {
+            "help" => {
+                print_help();
+                exit(0);
             }
-            cliargs.output = join![&*cliargs.input, "/generated"];
-
-            let mut matching = |arg: String, args: &mut IntoIter<String>| {
-                match &*arg {
-                    "--gen-output" | "-g" => cliargs.output = args.next().unwrap_or_else(|| {
-                        death_error(join!("No output location specified"), errors::BAD_CLI_OPTIONS)
-                    }),
-                    "--export" | "-e" => cliargs.export = true,
-                    "--cache" | "-C" => cliargs.cache = true,
-                    "--reuse-output" | "-R" => cliargs.reuse_output = true,
-                    _ => {
-                        death_error(join!("Unknown option '", &*arg, "'"), errors::BAD_CLI_OPTIONS);
-                    }
+            "build" => {
+                let mut cliargs = CliArgs::default();
+                cliargs.input = args.next().unwrap_or_else(|| {
+                    death_error(join!("No pack specified"), errors::BAD_CLI_OPTIONS)
+                }).to_string().replace("\\", "/");
+                while cliargs.input.ends_with("/") {
+                    cliargs.input.pop();
                 }
-            };
+                cliargs.output = join![&*cliargs.input, "/generated"];
 
-            while let Some(arg) = args.next() {
-                match &*arg {
-                    _ if arg.starts_with("-") && !arg.starts_with("--") => {
-                        let options = arg[1..].split("").collect::<Vec<_>>();
-                        for opt in options {
-                            if opt != "" {
-                                matching(join!["-", &*opt], &mut args);
-                            }
+                let mut matching = |arg: String, args: &mut IntoIter<String>| {
+                    match &*arg {
+                        "--gen-output" | "-g" => cliargs.output = args.next().unwrap_or_else(|| {
+                            death_error(join!("No output location specified"), errors::BAD_CLI_OPTIONS)
+                        }),
+                        "--export" | "-e" => cliargs.export = true,
+                        "--cache" | "-C" => cliargs.cache = true,
+                        "--reuse-output" | "-R" => cliargs.reuse_output = true,
+                        _ => {
+                            death_error(join!("Unknown option '", &*arg, "'"), errors::BAD_CLI_OPTIONS);
                         }
                     }
-                    _ => {
-                        matching(arg, &mut args);
+                };
+
+                while let Some(arg) = args.next() {
+                    match &*arg {
+                        _ if arg.starts_with("-") && !arg.starts_with("--") => {
+                            let options = arg[1..].split("").collect::<Vec<_>>();
+                            for opt in options {
+                                if opt != "" {
+                                    matching(join!["-", &*opt], &mut args);
+                                }
+                            }
+                        }
+                        _ => {
+                            matching(arg, &mut args);
+                        }
                     }
                 }
-            }
 
-            cliargs
+                cliargs
+            }
+            _ => { death_error(join!("Unknown mode '", &*mode, "', use 'help' to see all available commands"), errors::BAD_CLI_OPTIONS) }
         }
-        _ => { death_error(join!("Unknown mode '", &*mode, "', use 'help' to see all available commands"), errors::BAD_CLI_OPTIONS) }
+    } else {
+        soft_error(join!("No mode specified (use 'mitsuko help' for help)"));
+        exit(errors::BAD_CLI_OPTIONS);
     }
 }
 
 fn print_help() {
-    println!("Usage: mitsuko [MODE] [OPTIONS]");
+    println!("Usage: mitsuko <mode> [options]");
     println!("Modes:");
     println!("\thelp\n\t\tPrints this message");
     println!("\tbuild <pack_location> [options]\n\t\t{}\n", &*[

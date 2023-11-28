@@ -23,7 +23,6 @@ static mut PROJECT_ROOT: String = String::new();
 static MITSUKO: &str = include_str!("mitsuko.txt");
 
 //todo
-//  macro support
 //  match statement
 //  add multi datapack bundling
 //  add macro support for @alias
@@ -42,8 +41,8 @@ fn main() {
     let mut times = (Instant::now(), Instant::now(), Instant::now(), Instant::now());
     println!();
     let msgs = MITSUKO.split("\n").collect::<Vec<_>>();
-    let msg = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(Duration::from_millis(0)).as_micros() as usize % msgs.len();
-    status(join![&*join!["[Mitsuko: ", msgs[msg].trim(), "]"].background(GRY).end(), " ", &*env::args().collect::<Vec<String>>()[1..].join(" ").foreground(GRY).end()]);
+    let msg = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(Duration::from_millis(0)).as_millis() as usize % msgs.len();
+    status(join![&*join!["[Mitsuko: ", msgs[msg].trim(), "]"].background(GRY).end(), &*foreground(GRY), " mitsuko ", &*env::args().collect::<Vec<String>>()[1..].join(" ").end()]);
 
     let args = get_cli_args();
 
@@ -52,7 +51,7 @@ fn main() {
         SRC = args.input.clone();
         SRC.push_str("/src");
     }
-    
+
     if args.cache {
         read_cached_data(&*args.input);
     }
