@@ -346,7 +346,7 @@ impl Node {
             _ if MCFunction::is_score_path(&keys[0], mcf, ln) => {
                 node.node = Scoreboard;
                 node.lines = vec![lines[0].clone()];
-                if keys.len() >= 3 && ((&*keys[1]).eq("result") || (&*keys[1]).eq("success")) {
+                if keys.len() >= 3 && (keys[1].eq("result") || keys[1].eq("success")) {
                     lines[0] = keys[2..].join(" ");
                     let target = MCFunction::compile_score_path(&keys[0], mcf, ln);
                     node.node = Command;

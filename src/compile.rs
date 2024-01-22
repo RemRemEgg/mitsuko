@@ -293,9 +293,10 @@ fn parse_json_all(text: &mut String, mcf: &mut MCFunction, ln: usize) {
                     "strike" | "strikethrough" => data.strike = Some(set),
                     "underline" | "underlined" => data.underline = Some(set),
                     "obfuscated" | "mystify" => data.obfuscated = Some(set),
+                    "interpret" => data.interpret = Some(set),
                     "no_braces" => data.no_braces = set,
                     "" => {}
-                    _ if idx != 0 && data.color.is_none() && !opt.eq("") => data.color = Some(opt.to_string()),
+                    _ if idx != 0 && data.color.is_none() && !opt.eq("") && !opt.eq("reset") => data.color = Some(opt.to_string()),
                     _ => {}
                 }
             }
@@ -364,6 +365,7 @@ struct JSONData {
     strike: Option<bool>,
     underline: Option<bool>,
     obfuscated: Option<bool>,
+    interpret: Option<bool>,
     color: Option<String>,
 
     no_braces: bool,
@@ -380,6 +382,7 @@ impl JSONData {
             strike: None,
             underline: None,
             obfuscated: None,
+            interpret: None,
             color: None,
             no_braces: false,
             event_hover: None,
@@ -388,11 +391,12 @@ impl JSONData {
     }
 
     fn append_data<'a>(&self, json: &'a mut String) -> &'a mut String {
-        if let Some(b) = self.italic { json.push_str(&*join![r#","italic":""#, &*b.to_string(), "\""]); }
-        if let Some(b) = self.bold { json.push_str(&*join![r#","bold":""#, &*b.to_string(), "\""]); }
-        if let Some(b) = self.strike { json.push_str(&*join![r#","strikethrough":""#, &*b.to_string(), "\""]); }
-        if let Some(b) = self.underline { json.push_str(&*join![r#","underlined":""#, &*b.to_string(), "\""]); }
-        if let Some(b) = self.obfuscated { json.push_str(&*join![r#","obfuscated":""#, &*b.to_string(), "\""]); }
+        if let Some(b) = self.italic { json.push_str(&*join![r#","italic":"#, &*b.to_string()]); }
+        if let Some(b) = self.bold { json.push_str(&*join![r#","bold":"#, &*b.to_string()]); }
+        if let Some(b) = self.strike { json.push_str(&*join![r#","strikethrough":"#, &*b.to_string()]); }
+        if let Some(b) = self.underline { json.push_str(&*join![r#","underlined":"#, &*b.to_string()]); }
+        if let Some(b) = self.obfuscated { json.push_str(&*join![r#","obfuscated":"#, &*b.to_string()]); }
+        if let Some(b) = self.interpret { json.push_str(&*join![r#","interpret":"#, &*b.to_string()]); }
         if let Some(b) = self.color.clone() { json.push_str(&*join![r#","color":""#, &*b, "\""]); }
         if let Some((t, d)) = &self.event_hover { json.push_str(&*join![r#","hoverEvent":{"action":""#, &*t, r#"","contents":"#, &*d, r#"}"#]); }
         if let Some((t, d)) = &self.event_click { json.push_str(&*join![r#","clickEvent":{"action":""#, &*t, r#"","value":"#, &*d, r#"}"#]); }
