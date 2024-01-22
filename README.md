@@ -1,3 +1,5 @@
+<h3>Warning: This branch is an in-progress rewrite of Mitsuko!</h3>
+
 <h1>Mitsuko</h1>
 <h6>Version 0.2.0 - For 1.20.2 - By RemRemEgg</h6>
 
