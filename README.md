@@ -1,7 +1,19 @@
 <h1>Mitsuko</h1>
-<h6>Version 0.2.0 - For 1.20.2 - By RemRemEgg</h6>
+<h6>Version 0.2.0 - For 1.20.4 - By RemRemEgg</h6>
 
 ---
+
+# Notice
+> As of Minecraft 1.20.5, this project is done. It will remain up and available, but will not receive any more updates. There are 2 main reasons for this.
+>
+> 1. 1.20.5, with the new ECS/Data-driven items, is a truly amazing update for the MCC community. This is something that has been long awaited and requested, and it's incredible to see it happen finally. However, the new component syntax
+> replacing NBT syntax (NBT is dead, long live Components) makes the task of updating all of my code quite difficult. I don't always have the time to keep working on Mitsuko, and as much as I do love making this it can be more fun to actually
+> create games, not tools.
+> 2. Godot. Recently, I've picked up Godot and begun working on making games in a dedicated game engine. This is something that I've been meaning to do for a while, but never really started doing. The recent MC changes finally pushed me  to start.
+> By no means am I saying that I don't like the new components, but simply that I'm ready to do other things. My years of making datapacks were fun, but it's time to use a dedicated engine.
+>
+> There is a (small) chance ill pick this up in the future, im not sure. The largest project I ever made in Minecraft, NDL, is massive and I don't want to abandon it. However, it may be impractical to keep up Mitsuko's development even if I do come back to NDL.
+
 
 # Overview
 
